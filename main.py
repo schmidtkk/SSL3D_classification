@@ -1,5 +1,4 @@
 from pathlib import Path
-from uuid import uuid4
 import os
 
 import hydra
@@ -14,6 +13,7 @@ from parsing_utils import make_omegaconf_resolvers
 
 @hydra.main(version_base=None, config_path="./cli_configs", config_name="train")
 def main(cfg):
+
     # seeding
     if cfg.seed:
         seed_everything(cfg.seed)
@@ -29,9 +29,8 @@ def main(cfg):
         pass
     log_path = Path(cfg.trainer.logger.save_dir)
     log_path.mkdir(parents=True, exist_ok=True)
-    # cfg.trainer.logger.group = str(uuid4())
 
-    uid = hydra.core.hydra_config.HydraConfig.get().output_subdir.split("/")[-1]
+    uid = cfg.output_subdir.split("/")[-1]
     cfg.trainer.logger.group = uid
 
     # add sync_batchnorm if multiple GPUs are used
@@ -54,7 +53,10 @@ def main(cfg):
         if cfg.data.cv.k > 1:
             cfg.data.module.fold = k
         else:
-            cfg.data.module.fold = "0"
+            if cfg.data.module.fold is not None:
+                pass
+            else:
+                cfg.data.module.fold = "0"
 
         if cfg.trainer["enable_checkpointing"]:
             for i in cfg.trainer.callbacks:
@@ -74,20 +76,38 @@ def main(cfg):
             model = torch.compile(model, mode="default")
         dataset = instantiate(cfg.data).module
 
-        # log hypperparams
+        # log hypperparams and drop stuff that shouldn't be logged
+        ## Model
         cfg_dict = OmegaConf.to_container(cfg, resolve=True)
         cfg_dict["model"].pop("_target_")
         cfg_dict["model"]["model"] = cfg_dict["model"].pop("name")
         trainer.logger.log_hyperparams(cfg_dict["model"])
+
+        ## Data
         cfg_dict["data"]["module"].pop("_target_")
-        cfg_dict["data"]["module"]["train_transforms"] = ".".join(
-            cfg_dict["data"]["module"]["train_transforms"]["_target_"].split(".")[-2:]
-        )
-        cfg_dict["data"]["module"]["test_transforms"] = ".".join(
-            cfg_dict["data"]["module"]["test_transforms"]["_target_"].split(".")[-2:]
-        )
+        if cfg_dict["data"]["module"]["train_transforms"] is not None:
+            cfg_dict["data"]["module"]["train_transforms"] = ".".join(
+                cfg_dict["data"]["module"]["train_transforms"]["_target_"].split(".")[
+                    -2:
+                ]
+            )
+        if cfg_dict["data"]["module"]["test_transforms"] is not None:
+            cfg_dict["data"]["module"]["test_transforms"] = ".".join(
+                cfg_dict["data"]["module"]["test_transforms"]["_target_"].split(".")[
+                    -2:
+                ]
+            )
         cfg_dict["data"]["module"].pop("name")
         trainer.logger.log_hyperparams(cfg_dict["data"]["module"])
+
+        ## Trainer
+        cfg_dict["trainer"].pop("_target_")
+        cfg_dict["trainer"].pop("callbacks")
+        cfg_dict["trainer"].pop("enable_checkpointing")
+        cfg_dict["trainer"].pop("enable_progress_bar")
+        cfg_dict["trainer"].pop("logger")
+        cfg_dict["trainer"].pop("num_sanity_val_steps")
+        trainer.logger.log_hyperparams(cfg_dict["trainer"])
 
         # start fitting
         trainer.fit(model, dataset)
@@ -95,5 +115,6 @@ def main(cfg):
 
 
 if __name__ == "__main__":
+    os.environ["WANDB__SERVICE_WAIT"] = "300"
     make_omegaconf_resolvers()
     main()

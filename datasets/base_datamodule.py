@@ -18,18 +18,20 @@ class BaseDataModule(LightningDataModule):
         random_batches,
         num_workers,
         prepare_data_per_node,
+        fold,
         *args,
         **kwargs
     ):
         super(BaseDataModule, self).__init__()
 
-        self.data_path = Path(data_root_dir) / name
+        self.data_path = Path(data_root_dir)  # / name
         self.batch_size = batch_size
-        self.train_transforms = train_transforms()
-        self.test_transforms = test_transforms()
+        self.train_transforms = train_transforms
+        self.test_transforms = test_transforms
         self.random_batches = random_batches
         self.num_workers = num_workers
         self.prepare_data_per_node = prepare_data_per_node
+        self.fold = fold
 
     def prepare_data(self) -> None:
         return super().prepare_data()
@@ -93,7 +95,7 @@ class BaseDataModule(LightningDataModule):
         )
 
         return testloader
-    
+
     def predict_dataloader(self):
         predictloader = DataLoader(
             self.test_dataset,

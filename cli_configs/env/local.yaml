@@ -1,6 +1,2 @@
 # @package _global_
 exp_dir: './experiments'
-
-data:
-  module:
-    data_root_dir: ./data

@@ -1,3 +1,0 @@
-_target_: models.timm.TimmModel
-type: timm/convnext_small.fb_in22k
-

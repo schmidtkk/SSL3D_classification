@@ -4,8 +4,9 @@ defaults:
   - model: resnet
   - data: cifar10
 
+output_subdir: ${exp_dir}/${data.module.name}/checkpoints/${make_group_name:}
 hydra:
-  output_subdir: ${exp_dir}/${data.module.name}/checkpoints/${make_group_name:}
+  output_subdir: ${output_subdir}
   job:
     chdir: False
   run:
@@ -25,6 +26,7 @@ model:
   scheduler: CosineAnneal
   T_max: ${trainer.max_epochs}
   warmstart: 0
+  warmstart2: 0
   mixup: False
   mixup_alpha: 0.2
   weight_decay: 5e-4
@@ -38,6 +40,7 @@ model:
   input_dim: 2
   input_channels: 3
   task: 'Classification'
+  subtask: 'multiclass'  # 'multilabel'
   metric_computation_mode: 'epochwise'
   result_plot: 'val'
   num_classes: ${data.num_classes}
@@ -45,7 +48,10 @@ model:
   epochs: ${trainer.max_epochs}
   name: ${model_name_extractor:${model._target_}}
   compile: False
+  classification_head_dropout: 0.0
+  token_aggregation_method: cls_token
   pretrained: False
+  finetune_method: full
     
 data:
   module:
@@ -91,8 +97,10 @@ trainer:
     project: ${data.module.name}
     group: ???
   num_sanity_val_steps: 0
-  # Some usefull trainer parameters for debugging
+  accumulate_grad_batches: 1
+  # Some useful trainer parameters for debugging
   #limit_train_batches: 0.1
   #limit_val_batches: 0.5
   #limit_test_batches: 0.25
-  #accumulate_grad_batches: 2
+  #gradient_clip_val: 0.5
+  #log_every_n_steps: 50

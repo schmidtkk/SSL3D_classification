@@ -17,6 +17,7 @@ from torchmetrics import (
     MetricCollection,
     Precision,
     Recall,
+    AveragePrecision,
 )
 
 from augmentation.mixup import mixup_criterion, mixup_data
@@ -68,46 +69,73 @@ class BaseModel(L.LightningModule):
         self.result_plot_setting = result_plot
         metrics_dict = {}
 
+        self.subtask = kwargs["subtask"]
+
+        if self.subtask == "multiclass":
+            metric_task = "multiclass"
+        elif self.subtask == "multilabel":
+            metric_task = "multilabel"
+
         if self.task == "Classification":
             if "acc" in metrics:
                 metrics_dict["Accuracy"] = Accuracy(
-                    task="multiclass",
+                    task=metric_task,
                     num_classes=num_classes,
+                    num_labels=num_classes,
+                )
+            if "balanced_acc" in metrics:
+                metrics_dict["Balanced_Accuracy"] = Accuracy(
+                    task=metric_task,
+                    num_classes=num_classes,
+                    average="macro",
+                    num_labels=num_classes,
                 )
             if "f1" in metrics:
                 metrics_dict["F1"] = F1Score(
                     average="macro",
                     num_classes=num_classes,
-                    task="multiclass",
+                    task=metric_task,
+                    num_labels=num_classes,
                 )
             if "f1_per_class" in metrics:
                 metrics_dict["F1_per_class"] = F1Score(
                     average=None,
                     num_classes=num_classes,
-                    task="multiclass",
+                    task=metric_task,
+                    num_labels=num_classes,
                 )
             if "pr" in metrics:
                 metrics_dict["Precision"] = Precision(
                     average="macro",
                     num_classes=num_classes,
-                    task="multiclass",
+                    task=metric_task,
+                    num_labels=num_classes,
                 )
                 metrics_dict["Recall"] = Recall(
                     average="macro",
                     num_classes=num_classes,
-                    task="multiclass",
+                    task=metric_task,
+                    num_labels=num_classes,
                 )
             if "top5acc" in metrics:
                 metrics_dict["Accuracy_top5"] = Accuracy(
-                    task="multiclass",
+                    task=metric_task,
                     num_classes=num_classes,
                     top_k=5,
+                    num_labels=num_classes,
                 )
             if "auroc" in metrics:
                 metrics_dict["AUROC"] = AUROC(
                     average="macro",
-                    task="multiclass",
+                    task=metric_task,
                     num_classes=num_classes,
+                    num_labels=num_classes,
+                )
+            if "ap" in metrics:
+                metrics_dict["AP"] = AveragePrecision(
+                    task=metric_task,
+                    num_classes=num_classes,
+                    num_labels=num_classes,
                 )
 
         elif self.task == "Regression":
@@ -145,6 +173,7 @@ class BaseModel(L.LightningModule):
         self.scheduler = scheduler
         self.T_max = T_max
         self.warmstart = warmstart
+        self.warmstart2 = kwargs["warmstart2"]
         self.epochs = epochs
         self.pretrained = pretrained
 
@@ -161,6 +190,9 @@ class BaseModel(L.LightningModule):
         self.undecay_norm = undecay_norm
         self.zero_init_residual = zero_init_residual
 
+        # Finetuning method
+        self.finetuning_method = kwargs["finetune_method"]
+
         # Data and Dataloading
         self.input_dim = input_dim
         self.input_channels = input_channels
@@ -172,7 +204,12 @@ class BaseModel(L.LightningModule):
 
         # Loss
         if self.task == "Classification":
-            self.criterion = nn.CrossEntropyLoss(label_smoothing=self.label_smoothing)
+            if self.subtask == "multiclass":
+                self.criterion = nn.CrossEntropyLoss(
+                    label_smoothing=self.label_smoothing
+                )
+            elif self.subtask == "multilabel":
+                self.criterion = nn.BCEWithLogitsLoss()
         elif self.task == "Regression":
             self.criterion = nn.MSELoss()
 
@@ -180,6 +217,7 @@ class BaseModel(L.LightningModule):
         pass
 
     def training_step(self, batch, batch_idx):
+
         x, y = batch
 
         if self.mixup:
@@ -220,7 +258,9 @@ class BaseModel(L.LightningModule):
             if self.mixup:
                 loss = mixup_criterion(self.criterion, y_hat, targets_a, targets_b, lam)
             else:
-                loss = self.criterion(y_hat, y)
+                loss = self.criterion(
+                    y_hat, y.float() if self.subtask == "multilabel" else y
+                )
 
         self.log(
             "train_loss",
@@ -228,7 +268,7 @@ class BaseModel(L.LightningModule):
             on_step=False,
             on_epoch=True,
             prog_bar=True,
-            sync_dist=True,  # True if self.trainer.num_devices > 1 else False,
+            sync_dist=True,
         )
 
         if torch.isnan(y_hat).any():
@@ -248,7 +288,7 @@ class BaseModel(L.LightningModule):
                 on_step=False,
                 on_epoch=True,
                 prog_bar=True,
-                sync_dist=True,  # True if self.trainer.num_devices > 1 else False,
+                sync_dist=True,
             )
         elif self.metric_computation_mode == "epochwise":
             self.train_metrics.update(y_hat, y)
@@ -268,7 +308,9 @@ class BaseModel(L.LightningModule):
         if self.num_classes == 1:
             y_hat = y_hat.view(-1)
 
-        val_loss = self.criterion(y_hat, y)
+        val_loss = self.criterion(
+            y_hat, y.float() if self.subtask == "multilabel" else y
+        )
         self.log(
             "val_loss",
             val_loss,
@@ -302,16 +344,16 @@ class BaseModel(L.LightningModule):
         if hasattr(self, "val_pred_list"):
             self.val_pred_list.extend(y_hat)
             self.val_label_list.extend(y)
-    
+
     def predict_step(self, batch, batch_idx):
-        
+
         x, y = batch
         y_hat = self(x)
 
         if self.num_classes == 1:
             y_hat = y_hat.view(-1)
-        
-        #self.predictions.append(y_hat)
+
+        # self.predictions.append(y_hat)
         return y, y_hat
 
     def on_validation_epoch_end(self) -> None:
@@ -461,31 +503,146 @@ class BaseModel(L.LightningModule):
         else:
             params = self.parameters()
 
+        if self.finetuning_method == "full_sawtooth":
+            # Separate encoder and cls_head parameters
+            encoder_params = []
+            cls_head_params = []
+
+            for name, param in self.named_parameters():
+                if "encoder" in name:
+                    encoder_params.append(param)
+                elif "cls_head" in name:
+                    cls_head_params.append(param)
+
         if not self.sam:
             if self.optimizer == "SGD":
-                optimizer = torch.optim.SGD(
-                    params,
-                    lr=self.lr,
-                    momentum=0.9,
-                    weight_decay=self.weight_decay,
-                    nesterov=self.nesterov,
-                )
+                if self.finetuning_method == "full_sawtooth":
+                    optimizer = torch.optim.SGD(
+                        [
+                            {
+                                "params": cls_head_params,
+                                "lr": self.lr,
+                                "momentum": 0.9,
+                                "weight_decay": self.weight_decay,
+                                "nesterov": self.nesterov,
+                                "name": "cls_head",
+                            },
+                            {
+                                "params": encoder_params,
+                                "lr": self.lr,
+                                "momentum": 0.9,
+                                "weight_decay": self.weight_decay,
+                                "nesterov": self.nesterov,
+                                "name": "encoder",
+                            },
+                        ]
+                    )
+
+                else:
+                    optimizer = torch.optim.SGD(
+                        params,
+                        lr=self.lr,
+                        momentum=0.9,
+                        weight_decay=self.weight_decay,
+                        nesterov=self.nesterov,
+                    )
             elif self.optimizer == "Adam":
-                optimizer = torch.optim.Adam(
-                    params, lr=self.lr, weight_decay=self.weight_decay
-                )
+                if self.finetuning_method == "full_sawtooth":
+                    optimizer = torch.optim.Adam(
+                        [
+                            {
+                                "params": cls_head_params,
+                                "lr": self.lr,
+                                "weight_decay": self.weight_decay,
+                                "name": "cls_head",
+                            },
+                            {
+                                "params": encoder_params,
+                                "lr": self.lr,
+                                "weight_decay": self.weight_decay,
+                                "name": "encoder",
+                            },
+                        ]
+                    )
+
+                else:
+                    optimizer = torch.optim.Adam(
+                        params, lr=self.lr, weight_decay=self.weight_decay
+                    )
             elif self.optimizer == "AdamW":
-                optimizer = torch.optim.AdamW(
-                    params, lr=self.lr, weight_decay=self.weight_decay
-                )
+
+                if self.finetuning_method == "full_sawtooth":
+                    optimizer = torch.optim.AdamW(
+                        [
+                            {
+                                "params": cls_head_params,
+                                "lr": self.lr,
+                                "weight_decay": self.weight_decay,
+                                "name": "cls_head",
+                            },
+                            {
+                                "params": encoder_params,
+                                "lr": self.lr,
+                                "weight_decay": self.weight_decay,
+                                "name": "encoder",
+                            },
+                        ]
+                    )
+
+                else:
+                    optimizer = torch.optim.AdamW(
+                        params, lr=self.lr, weight_decay=self.weight_decay
+                    )
             elif self.optimizer == "Rmsprop":
-                optimizer = RMSpropTF(
-                    params, lr=self.lr, weight_decay=self.weight_decay
-                )
+
+                if self.finetuning_method == "full_sawtooth":
+                    optimizer = RMSpropTF(
+                        [
+                            {
+                                "params": cls_head_params,
+                                "lr": self.lr,
+                                "weight_decay": self.weight_decay,
+                                "name": "cls_head",
+                            },
+                            {
+                                "params": encoder_params,
+                                "lr": self.lr,
+                                "weight_decay": self.weight_decay,
+                                "name": "encoder",
+                            },
+                        ]
+                    )
+
+                else:
+                    optimizer = RMSpropTF(
+                        params, lr=self.lr, weight_decay=self.weight_decay
+                    )
             elif self.optimizer == "Madgrad":
-                optimizer = MADGRAD(
-                    params, lr=self.lr, momentum=0.9, weight_decay=self.weight_decay
-                )
+
+                if self.finetuning_method == "full_sawtooth":
+                    optimizer = MADGRAD(
+                        [
+                            {
+                                "params": cls_head_params,
+                                "lr": self.lr,
+                                "momentum": 0.9,
+                                "weight_decay": self.weight_decay,
+                                "name": "cls_head",
+                            },
+                            {
+                                "params": encoder_params,
+                                "lr": self.lr,
+                                "momentum": 0.9,
+                                "weight_decay": self.weight_decay,
+                                "name": "encoder",
+                            },
+                        ]
+                    )
+
+                else:
+                    optimizer = MADGRAD(
+                        params, lr=self.lr, momentum=0.9, weight_decay=self.weight_decay
+                    )
 
         else:
             # ASAM paper suggests 10x larger rho for adaptive SAM than in normal SAM
@@ -553,9 +710,19 @@ class BaseModel(L.LightningModule):
                     optimizer, T_max=self.T_max
                 )
             elif self.scheduler == "CosineAnneal" and self.warmstart > 0:
-                scheduler = CosineAnnealingLR_Warmstart(
-                    optimizer, T_max=self.T_max, warmstart=self.warmstart
-                )
+                if self.finetuning_method == "full_sawtooth":
+                    scheduler = CosineAnnealingLR_DoubleWarmstart(
+                        optimizer,
+                        T_max=self.T_max,
+                        warmstart1=self.warmstart,
+                        warmstart2=self.warmstart2,
+                    )
+                else:
+                    scheduler = CosineAnnealingLR_Warmstart(
+                        optimizer,
+                        T_max=self.T_max,
+                        warmstart=self.warmstart,
+                    )
             elif self.scheduler == "Step":
                 # decays every 1/4 epochs
                 scheduler = torch.optim.lr_scheduler.StepLR(
@@ -632,6 +799,94 @@ class CosineAnnealingLR_Warmstart(_LRScheduler):
             ]
 
             self.T += 1
+            return updated_lr
+
+
+class CosineAnnealingLR_DoubleWarmstart(_LRScheduler):
+    """
+    CosineAnnealingLR with two consecutive warmup phases.
+
+    - Warmup 1: Increases LR from 0 to base LR, **only for `cls_head`**.
+    - Warmup 2: Increases LR from 0 to base LR, **for both `cls_head` and `encoder`**.
+    - Cosine Annealing: Decays LR **for both `cls_head` and `encoder`**.
+    """
+
+    def __init__(
+        self,
+        optimizer,
+        T_max,
+        eta_min=0,
+        last_epoch=-1,
+        verbose=False,
+        warmstart1=0,
+        warmstart2=0,
+    ):
+        self.warmstart1 = warmstart1
+        self.warmstart2 = warmstart2
+        self.eta_min = eta_min
+        self.T_max = T_max - (warmstart1 + warmstart2)  # Effective decay period
+        self.T = 0  # Internal counter
+
+        # Identify param groups: assume "cls_head" and "encoder" are named properly in optimizer param_groups
+        self.cls_head_group = None
+        self.encoder_group = None
+
+        for param_group in optimizer.param_groups:
+            if param_group.get("name") == "cls_head":
+                self.cls_head_group = param_group
+            elif param_group.get("name") == "encoder":
+                self.encoder_group = param_group
+
+        if self.cls_head_group is None:
+            raise ValueError("Optimizer must have a parameter group named 'cls_head'.")
+        if self.encoder_group is None:
+            raise ValueError("Optimizer must have a parameter group named 'encoder'.")
+
+        super(CosineAnnealingLR_DoubleWarmstart, self).__init__(
+            optimizer, last_epoch, verbose
+        )
+
+    def get_lr(self):
+        if not self._get_lr_called_within_step:
+            warnings.warn(
+                "To get the last learning rate computed by the scheduler, please use `get_last_lr()`.",
+                UserWarning,
+            )
+
+        warmup_total = self.warmstart1 + self.warmstart2
+
+        # First warmup phase (only `cls_head` is trained)
+        if self.last_epoch < self.warmstart1:
+            warmup_factor = (self.last_epoch + 1) / self.warmstart1
+            updated_lr = []
+
+            for group in self.optimizer.param_groups:
+                if group is self.cls_head_group:
+                    updated_lr.append(group["initial_lr"] * warmup_factor)
+                else:  # Keep encoder frozen
+                    updated_lr.append(0)
+
+            return updated_lr
+
+        # Second warmup phase (both `cls_head` and `encoder` are trained)
+        elif self.last_epoch < warmup_total:
+            warmup_factor = (self.last_epoch - self.warmstart1 + 1) / self.warmstart2
+            updated_lr = [
+                group["initial_lr"] * warmup_factor
+                for group in self.optimizer.param_groups
+            ]
+            return updated_lr
+
+        # Cosine annealing phase (both `cls_head` and `encoder`)
+        else:
+            epoch_cosine = self.last_epoch - warmup_total  # Shifted epoch count
+            updated_lr = [
+                self.eta_min
+                + (group["initial_lr"] - self.eta_min)
+                * 0.5
+                * (1 + math.cos(math.pi * epoch_cosine / self.T_max))
+                for group in self.optimizer.param_groups
+            ]
             return updated_lr
 
 
