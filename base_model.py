@@ -432,12 +432,12 @@ class BaseModel(L.LightningModule):
             self.train_label_list = []
 
     def on_train_start(self):
-        from models.preact_resnet import PreActBlock, PreActBottleneck
-        from models.pyramidnet import BasicBlock as BasicBlock_pyramid
-        from models.pyramidnet import Bottleneck as Bottleneck_pyramid
-        from models.resnet import BasicBlock, Bottleneck
-        from models.wide_resnet import BasicBlock as Wide_BasicBlock
-        from models.wide_resnet import Bottleneck as Wide_Bottleneck
+        #from models.preact_resnet import PreActBlock, PreActBottleneck
+        #from models.pyramidnet import BasicBlock as BasicBlock_pyramid
+        #from models.pyramidnet import Bottleneck as Bottleneck_pyramid
+        #from models.resnet import BasicBlock, Bottleneck
+        #from models.wide_resnet import BasicBlock as Wide_BasicBlock
+        #from models.wide_resnet import Bottleneck as Wide_Bottleneck
 
         if not self.pretrained:
             print("Initializing weights")

@@ -1,2 +1,2 @@
 # @package _global_
-exp_dir: './experiments'
+exp_dir: '/home/c306h/cluster-ckp/classification/experiments/'

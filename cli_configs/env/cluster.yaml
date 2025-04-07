@@ -1,5 +1,5 @@
 # @package _global_
-exp_dir: ${oc.env:EXPERIMENT_LOCATION}
+exp_dir: '/dkfz/cluster/gpu/checkpoints/OE0441/c306h//classification/experiments/'
 
 trainer:
   enable_progress_bar: False
