@@ -109,7 +109,12 @@ def main(cfg):
         cfg_dict["trainer"].pop("num_sanity_val_steps")
         trainer.logger.log_hyperparams(cfg_dict["trainer"])
 
-        # start fitting
+        if cfg_dict["val_only"]:
+            trainer.validate(model, dataset)
+        else:
+            trainer.fit(model, dataset)
+
+# start fitting
         trainer.fit(model, dataset)
         wandb.finish()
 

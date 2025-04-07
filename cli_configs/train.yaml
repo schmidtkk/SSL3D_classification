@@ -52,6 +52,7 @@ model:
   token_aggregation_method: cls_token
   pretrained: False
   finetune_method: full
+  save_preds: True
     
 data:
   module:
@@ -66,6 +67,8 @@ data:
 metrics:
   - 'acc'
   - 'f1'
+
+val_only: False
 
 trainer:
   _target_: lightning.pytorch.Trainer

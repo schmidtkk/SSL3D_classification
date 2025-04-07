@@ -8,16 +8,17 @@ import wandb
 from madgrad import MADGRAD
 from timm.optim import RMSpropTF
 from torch.optim.lr_scheduler import _LRScheduler
+import torch.nn.functional as F
 from torchmetrics import (
     AUROC,
     Accuracy,
+    AveragePrecision,
     F1Score,
     MeanAbsoluteError,
     MeanSquaredError,
     MetricCollection,
     Precision,
     Recall,
-    AveragePrecision,
 )
 
 from augmentation.mixup import mixup_criterion, mixup_data
@@ -27,37 +28,37 @@ from regularization.sam import SAM
 
 class BaseModel(L.LightningModule):
     def __init__(
-        self,
-        task,
-        metric_computation_mode,
-        result_plot,
-        metrics,
-        num_classes,
-        name,
-        lr,
-        weight_decay,
-        optimizer,
-        nesterov,
-        sam,
-        adaptive_sam,
-        scheduler,
-        T_max,
-        warmstart,
-        epochs,
-        mixup,
-        mixup_alpha,
-        label_smoothing,
-        stochastic_depth,
-        resnet_dropout,
-        squeeze_excitation,
-        apply_shakedrop,
-        undecay_norm,
-        zero_init_residual,
-        input_dim,
-        input_channels,
-        pretrained,
-        *args,
-        **kwargs
+            self,
+            task,
+            metric_computation_mode,
+            result_plot,
+            metrics,
+            num_classes,
+            name,
+            lr,
+            weight_decay,
+            optimizer,
+            nesterov,
+            sam,
+            adaptive_sam,
+            scheduler,
+            T_max,
+            warmstart,
+            epochs,
+            mixup,
+            mixup_alpha,
+            label_smoothing,
+            stochastic_depth,
+            resnet_dropout,
+            squeeze_excitation,
+            apply_shakedrop,
+            undecay_norm,
+            zero_init_residual,
+            input_dim,
+            input_channels,
+            pretrained,
+            *args,
+            **kwargs
     ):
         super(BaseModel, self).__init__()
 
@@ -157,9 +158,14 @@ class BaseModel(L.LightningModule):
                 self.train_pred_list = []
                 self.train_label_list = []
 
+        self.save_preds = True if kwargs["save_preds"] else False
+        if self.save_preds:
+            self.val_pred_list = []
+            self.val_label_list = []
+
         metrics = MetricCollection(metrics_dict)
-        self.train_metrics = metrics.clone(prefix="train_")
-        self.val_metrics = metrics.clone(prefix="val_")
+        self.train_metrics = metrics.clone(prefix="Train/")
+        self.val_metrics = metrics.clone(prefix="Val/")
 
         # Training Args
         self.name = name
@@ -229,6 +235,10 @@ class BaseModel(L.LightningModule):
             if self.num_classes == 1:
                 y_hat = y_hat.view(-1)
 
+        if x.shape[0] == 1 and len(y_hat.shape) == 1:
+            # for cases where batch size is 1 and y_hat doesn't have a batch dim
+            y_hat = y_hat.unsqueeze(0)
+
         if self.sam:
             opt = self.optimizers()
 
@@ -263,7 +273,7 @@ class BaseModel(L.LightningModule):
                 )
 
         self.log(
-            "train_loss",
+            "Train/loss",
             loss,
             on_step=False,
             on_epoch=True,
@@ -277,12 +287,12 @@ class BaseModel(L.LightningModule):
         # save metrics
         if self.metric_computation_mode == "stepwise":
             metrics_res = self.train_metrics(y_hat, y)
-            if "train_F1_per_class" in metrics_res.keys():
-                for i, value in enumerate(metrics_res["train_F1_per_class"]):
-                    metrics_res["train_F1_class_{}".format(i)] = (
+            if "Train/F1_per_class" in metrics_res.keys():
+                for i, value in enumerate(metrics_res["Train/F1_per_class"]):
+                    metrics_res["Train/F1_class_{}".format(i)] = (
                         value if not torch.isnan(value) else 0.0
                     )
-                del metrics_res["train_F1_per_class"]
+                del metrics_res["Train/F1_per_class"]
             self.log_dict(
                 metrics_res,
                 on_step=False,
@@ -312,7 +322,7 @@ class BaseModel(L.LightningModule):
             y_hat, y.float() if self.subtask == "multilabel" else y
         )
         self.log(
-            "val_loss",
+            "Val/loss",
             val_loss,
             on_step=False,
             on_epoch=True,
@@ -323,12 +333,12 @@ class BaseModel(L.LightningModule):
         # save metrics
         if self.metric_computation_mode == "stepwise":
             metrics_res = self.val_metrics(y_hat, y)
-            if "val_F1_per_class" in metrics_res.keys():
-                for i, value in enumerate(metrics_res["val_F1_per_class"]):
-                    metrics_res["val_F1_class_{}".format(i)] = (
+            if "Val/F1_per_class" in metrics_res.keys():
+                for i, value in enumerate(metrics_res["Val/F1_per_class"]):
+                    metrics_res["Val/F1_class_{}".format(i)] = (
                         value if not torch.isnan(value) else 0.0
                     )
-                del metrics_res["val_F1_per_class"]
+                del metrics_res["Val/F1_per_class"]
             self.log_dict(
                 metrics_res,
                 on_step=False,
@@ -342,8 +352,8 @@ class BaseModel(L.LightningModule):
         if hasattr(self, "val_conf_mat"):
             self.val_conf_mat.update(y_hat, y)
         if hasattr(self, "val_pred_list"):
-            self.val_pred_list.extend(y_hat)
-            self.val_label_list.extend(y)
+            self.val_pred_list.extend(y_hat.detach().cpu())
+            self.val_label_list.extend(y.detach().cpu())
 
     def predict_step(self, batch, batch_idx):
 
@@ -359,12 +369,12 @@ class BaseModel(L.LightningModule):
     def on_validation_epoch_end(self) -> None:
         if self.metric_computation_mode == "epochwise":
             metrics_res = self.val_metrics.compute()
-            if "val_F1_per_class" in metrics_res.keys():
-                for i, value in enumerate(metrics_res["val_F1_per_class"]):
-                    metrics_res["val_F1_class_{}".format(i)] = (
+            if "Val/F1_per_class" in metrics_res.keys():
+                for i, value in enumerate(metrics_res["Val/F1_per_class"]):
+                    metrics_res["Val/F1_class_{}".format(i)] = (
                         value if not torch.isnan(value) else 0.0
                     )
-                del metrics_res["val_F1_per_class"]
+                del metrics_res["Val/F1_per_class"]
             self.log_dict(
                 metrics_res,
                 on_step=False,
@@ -379,28 +389,70 @@ class BaseModel(L.LightningModule):
             self.val_conf_mat.save_state(self, "val")
             self.val_conf_mat.reset()
         if hasattr(self, "val_pred_list"):
-            data = [[x, y] for (x, y) in zip(self.val_label_list, self.val_pred_list)]
-            table = wandb.Table(data=data, columns=["Ground Truth", "Prediction"])
-            wandb.log(
-                {
-                    "Val Scatterplot": wandb.plot.scatter(
-                        table, "Ground Truth", "Prediction", "Validation Scatterplot"
+            # Stack tensors along batch dim
+            val_preds = torch.stack(self.val_pred_list, dim=0).to(self.device)
+            val_labels = torch.stack(self.val_label_list, dim=0).to(self.device)
+            # print(len(self.val_pred_list), val_preds.shape)
+            # Gather from all GPUs
+            preds_all = self.all_gather(val_preds)
+            preds_all = preds_all.view(-1, *preds_all.shape[2:])
+            labels_all = self.all_gather(val_labels)
+            labels_all = labels_all.view(-1, *labels_all.shape[2:])
+            # print(preds_all.shape)
+
+            if self.trainer.is_global_zero:
+                if self.task == "Regression":
+                    data = [[x, y] for (x, y) in zip(labels_all, preds_all)]
+                    table = wandb.Table(
+                        data=data, columns=["Ground Truth", "Prediction"]
                     )
-                }
-            )
-            # reset
-            self.val_pred_list = []
-            self.val_label_list = []
+                    wandb.log(
+                        {
+                            "Val Scatterplot": wandb.plot.scatter(
+                                table,
+                                "Ground Truth",
+                                "Prediction",
+                                "Validation Scatterplot",
+                            )
+                        }
+                    )
+                if self.save_preds:
+
+                    if self.task == "Classification":
+                        columns = (
+                                      (["GT_" + str(i) for i in range(len(labels_all[0]))])
+                                      if self.subtask == "multilabel"
+                                      else ["GT"]
+                                  ) + ["Pred_" + str(i) for i in range(len(preds_all[0]))]
+                        data = [
+                            (
+                                    (x.tolist() if self.subtask == "multilabel" else [x])
+                                    + (
+                                        F.softmax(y, dim=-1)
+                                        if self.subtask == "multiclass"
+                                        else torch.sigmoid(y)
+                                    ).tolist()
+                            )
+                            for x, y in zip(labels_all, preds_all)
+                        ]
+                        table = wandb.Table(data=data, columns=columns)
+                        wandb.log({"Val Predictions": table})
+                    else:
+                        raise NotImplementedError
+
+                # reset
+                self.val_pred_list.clear()
+                self.val_label_list.clear()
 
     def on_train_epoch_end(self) -> None:
         if self.metric_computation_mode == "epochwise":
             metrics_res = self.train_metrics.compute()
-            if "train_F1_per_class" in metrics_res.keys():
-                for i, value in enumerate(metrics_res["train_F1_per_class"]):
-                    metrics_res["train_F1_class_{}".format(i)] = (
+            if "Train/F1_per_class" in metrics_res.keys():
+                for i, value in enumerate(metrics_res["Train/F1_per_class"]):
+                    metrics_res["Train/F1_class_{}".format(i)] = (
                         value if not torch.isnan(value) else 0.0
                     )
-                del metrics_res["train_F1_per_class"]
+                del metrics_res["Train/F1_per_class"]
 
             self.log_dict(
                 metrics_res,
@@ -432,12 +484,12 @@ class BaseModel(L.LightningModule):
             self.train_label_list = []
 
     def on_train_start(self):
-        #from models.preact_resnet import PreActBlock, PreActBottleneck
-        #from models.pyramidnet import BasicBlock as BasicBlock_pyramid
-        #from models.pyramidnet import Bottleneck as Bottleneck_pyramid
-        #from models.resnet import BasicBlock, Bottleneck
-        #from models.wide_resnet import BasicBlock as Wide_BasicBlock
-        #from models.wide_resnet import Bottleneck as Wide_Bottleneck
+        # from models.preact_resnet import PreActBlock, PreActBottleneck
+        # from models.pyramidnet import BasicBlock as BasicBlock_pyramid
+        # from models.pyramidnet import Bottleneck as Bottleneck_pyramid
+        # from models.resnet import BasicBlock, Bottleneck
+        # from models.wide_resnet import BasicBlock as Wide_BasicBlock
+        # from models.wide_resnet import Bottleneck as Wide_Bottleneck
 
         if not self.pretrained:
             print("Initializing weights")
@@ -461,29 +513,29 @@ class BaseModel(L.LightningModule):
             # so that the residual branch starts with zeros, and each residual block behaves like an identity.
             # This improves the model by 0.2~0.3% according to https://arxiv.org/abs/1706.02677
             # TODO
-            if self.zero_init_residual:
-                if "PreAct" in self.name:
-                    for m in self.modules():
-                        if isinstance(m, PreActBottleneck):
-                            nn.init.constant_(m.conv3.weight, 0)
-                        elif isinstance(m, PreActBlock):
-                            nn.init.constant_(m.conv2.weight, 0)
+            # if self.zero_init_residual:
+            #     if "PreAct" in self.name:
+            #         for m in self.modules():
+            #             if isinstance(m, PreActBottleneck):
+            #                 nn.init.constant_(m.conv3.weight, 0)
+            #             elif isinstance(m, PreActBlock):
+            #                 nn.init.constant_(m.conv2.weight, 0)
 
-                elif "ResNet" in self.name or "WRN" in self.name:
-                    for m in self.modules():
-                        if isinstance(m, Bottleneck) or isinstance(m, Wide_Bottleneck):
-                            nn.init.constant_(m.bn3.weight, 0)
-                        elif isinstance(m, BasicBlock) or isinstance(
-                            m, Wide_BasicBlock
-                        ):
-                            nn.init.constant_(m.bn2.weight, 0)
-
-                elif "Pyramid" in self.name:
-                    for m in self.modules():
-                        if isinstance(m, Bottleneck_pyramid):
-                            nn.init.constant_(m.bn4.weight, 0)
-                        elif isinstance(m, BasicBlock_pyramid):
-                            nn.init.constant_(m.bn3.weight, 0)
+                # elif "ResNet" in self.name or "WRN" in self.name:
+                #     for m in self.modules():
+                #         if isinstance(m, Bottleneck) or isinstance(m, Wide_Bottleneck):
+                #             nn.init.constant_(m.bn3.weight, 0)
+                #         elif isinstance(m, BasicBlock) or isinstance(
+                #                 m, Wide_BasicBlock
+                #         ):
+                #             nn.init.constant_(m.bn2.weight, 0)
+                #
+                # elif "Pyramid" in self.name:
+                #     for m in self.modules():
+                #         if isinstance(m, Bottleneck_pyramid):
+                #             nn.init.constant_(m.bn4.weight, 0)
+                #         elif isinstance(m, BasicBlock_pyramid):
+                #             nn.init.constant_(m.bn3.weight, 0)
 
     def configure_optimizers(self):
         # leave bias and params of batch norm undecayed as in https://arxiv.org/pdf/1812.01187.pdf (Bag of tricks)
@@ -744,7 +796,7 @@ class CosineAnnealingLR_Warmstart(_LRScheduler):
     """
 
     def __init__(
-        self, optimizer, T_max, eta_min=0, last_epoch=-1, verbose=False, warmstart=0
+            self, optimizer, T_max, eta_min=0, last_epoch=-1, verbose=False, warmstart=0
     ):
         self.T_max = T_max - warmstart  # do not consider warmstart epochs for T_max
         self.eta_min = eta_min
@@ -812,14 +864,14 @@ class CosineAnnealingLR_DoubleWarmstart(_LRScheduler):
     """
 
     def __init__(
-        self,
-        optimizer,
-        T_max,
-        eta_min=0,
-        last_epoch=-1,
-        verbose=False,
-        warmstart1=0,
-        warmstart2=0,
+            self,
+            optimizer,
+            T_max,
+            eta_min=0,
+            last_epoch=-1,
+            verbose=False,
+            warmstart1=0,
+            warmstart2=0,
     ):
         self.warmstart1 = warmstart1
         self.warmstart2 = warmstart2
