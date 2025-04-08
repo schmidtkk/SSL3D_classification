@@ -3,7 +3,7 @@ data:
   module:
     _target_: datasets.whitecat_median_shape.whitecat_median_shape_DataModule
     name: whitecat_median_shape
-    data_root_dir: /home/c306h/cluster-data/classification/
+    data_root_dir: ${data_dir}/classification
     batch_size: 2
     train_transforms: 
       _target_: augmentation.policies.batchgenerators.get_training_transforms
