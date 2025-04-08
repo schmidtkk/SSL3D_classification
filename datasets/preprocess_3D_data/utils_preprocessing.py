@@ -4,10 +4,9 @@ import blosc2
 import os
 from multiprocessing import Pool
 import numpy as np
-from cropping import crop_to_nonzero
-from normalization import ZScoreNormalization
-from default_resampling import resample_data_or_seg_to_shape
-from blosc_helper import save_case, comp_blosc2_params
+from datasets.preprocess_3D_data.normalization import ZScoreNormalization
+from datasets.preprocess_3D_data.default_resampling import resample_data_or_seg_to_shape
+from datasets.preprocess_3D_data.blosc_helper import save_case, comp_blosc2_params
 
 
 def run_case_npy(data: np.ndarray, original_spacing: list, target_shape:list):

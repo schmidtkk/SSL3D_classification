@@ -2,8 +2,7 @@ import os
 import numpy as np
 import pandas as pd
 import json
-from datasets.utils_preprocessing import get_median_spacing_and_size_distributed, run_all_cases
-from datasets.cross_validation import generate_crossval_split
+from datasets.preprocess_3D_data.preprocess_dataset import preprocess_dataset
 
 
 if __name__ == '__main__':
