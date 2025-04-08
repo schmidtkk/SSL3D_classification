@@ -13,7 +13,7 @@ data:
       do_dummy_2d_data_aug: False
     test_transforms: null
   cv:
-    k: 1
+    k: 3
 
   num_classes: 2
   patch_size: [160, 160, 160]
@@ -21,7 +21,7 @@ data:
 model:
   task: 'Classification'
   cifar_size: False
-  input_channels: 2
+  input_channels: 4
   input_dim: 3
   input_shape: ${data.patch_size}
   optimizer: AdamW
@@ -33,7 +33,7 @@ model:
 trainer:
   logger:
     project: GLvsL_fixed160patchsize
-  accumulate_grad_batches: 96
+  accumulate_grad_batches: 24
   max_epochs: 200
 
 metrics:
