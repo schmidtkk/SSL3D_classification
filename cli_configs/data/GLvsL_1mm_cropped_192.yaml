@@ -1,8 +1,8 @@
 # @package _global_
 data:
   module:
-    _target_: datasets.GLvsL_1mm_cropped.GLvsL_1mm_cropped_DataModule
-    name: GLvsL_1mm_cropped
+    _target_: datasets.GLvsL_1mm_cropped_192.GLvsL_1mm_cropped_192_DataModule
+    name: GLvsL_1mm_cropped_192
     data_root_dir: ${data_dir}/classification
     batch_size: 1
     train_transforms:
@@ -16,7 +16,7 @@ data:
     k: 3
 
   num_classes: 2
-  patch_size: [160, 160, 160]
+  patch_size: [192, 192, 192]
 
 model:
   task: 'Classification'
@@ -32,7 +32,7 @@ model:
 
 trainer:
   logger:
-    project: GLvsL_1mm_cropped
+    project: GLvsL_1mm_cropped_192
   accumulate_grad_batches: 24
   max_epochs: 200
 
