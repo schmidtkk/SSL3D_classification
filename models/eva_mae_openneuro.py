@@ -206,6 +206,32 @@ def load_pretrained_weights(
     # Initialize model state dictionary
     model_dict = mod.state_dict()
 
+    in_conv_weights_model: torch.Tensor = model_dict[
+        "down_projection.proj.weigh"
+    ]
+    in_conv_weights_pretrained: torch.Tensor = pretrained_dict[
+        "down_projection.proj.weigh"
+    ]
+
+    in_channels_model = in_conv_weights_model.shape[1]
+    in_channels_pretrained = in_conv_weights_pretrained.shape[1]
+
+    if in_channels_model != in_channels_pretrained:
+        assert in_channels_pretrained == 1, (
+            f"The input channels do not match. Pretrained model: {in_channels_pretrained}; your network: "
+            f"your network: {in_channels_model}"
+        )
+
+        repeated_weight_tensor = in_conv_weights_pretrained.repeat(
+            1, in_channels_model, 1, 1, 1) / in_channels_model
+        target_data_ptr = in_conv_weights_pretrained.data_ptr()
+        for key, weights in pretrained_dict.items():
+            if weights.data_ptr() == target_data_ptr:
+                # print(key)
+                pretrained_dict[key] = repeated_weight_tensor
+
+
+
     # adjust pos_embed if necessary
     if handle_input_shape_mismatch == "interpolate":
 
@@ -219,7 +245,7 @@ def load_pretrained_weights(
         resized_patch_pos_embed = F.interpolate(
             patch_pos_embed.permute(0, 2, 1),  # [B, C, Tokens] for interpolation
             size=model_pos_embed_shape[1]
-            - 1,  # Target number of patch tokens (subtract 1 for the class token)
+                 - 1,  # Target number of patch tokens (subtract 1 for the class token)
             mode="linear",
             align_corners=False,
         ).permute(
@@ -233,6 +259,7 @@ def load_pretrained_weights(
 
     else:
         raise NotImplementedError
+
 
     # Filter out unnecessary keys based on match_encoder_only flag
     skip_strings_in_pretrained = [".seg_layers."]

@@ -127,8 +127,7 @@ def load_pretrained_weights(
         )
 
         repeated_weight_tensor = in_conv_weights_pretrained.repeat(
-            1, in_channels_model, 1, 1, 1
-        )
+            1, in_channels_model, 1, 1, 1) / in_channels_model
         target_data_ptr = in_conv_weights_pretrained.data_ptr()
         for key, weights in pretrained_dict.items():
             if weights.data_ptr() == target_data_ptr:
