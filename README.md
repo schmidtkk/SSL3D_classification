@@ -16,7 +16,7 @@ Find a torch installation guide for your system [here](https://pytorch.org/get-s
 Please also install the  [nnssl](https://github.com/MIC-DKFZ/nnssl) repository in the same environment!
 
 # Dataset preprocessing
-Currently, preprocessing is highly dataset- and user-dependent. However, in this file, we provide an example of how it can be done.
+Currently, preprocessing is highly dataset- and user-dependent. 
 However in `./datasets/preocess3D_data/datasets/` you can find examples of how a dataset can be preprocessed. 
 
 # Including other datasets

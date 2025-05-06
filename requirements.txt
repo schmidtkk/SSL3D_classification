@@ -17,3 +17,4 @@ batchgeneratorsv2>=0.2.3
 blosc2>=3.0.0
 peft>=0.14.0
 git+https://github.com/MIC-DKFZ/acvl_utils.git
+hd-bet

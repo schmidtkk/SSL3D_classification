@@ -2,13 +2,15 @@ import os
 import numpy as np
 import pandas as pd
 import json
-from datasets.preprocess_3D_data.preprocess_dataset import preprocess_dataset
+
+from datasets.preprocess_3D_data.crop_to_mask import process_and_save_all_cases
+from datasets.preprocess_3D_data.preprocess_dataset import preprocess_dataset_toshape, preprocess_dataset_tospacing
 from batchgenerators.utilities.file_and_folder_operations import *
 
 
 if __name__ == '__main__':
     # Base path and folders to search
-    base_path = "/home/c306h/E132-Projekte/Projects/2022_Miriam_UKHD_NeuroSurgery_GlioVsLym/Classification_SSL3D/"  # Change this to your actual base directory
+    base_path = ""  # Change this to your actual base directory
 
     # Collect matching files
     nii_files = []
@@ -31,6 +33,23 @@ if __name__ == '__main__':
             record_label_dict[case] = 0
 
 
+    #resampling to 1mm spacing
+    preprocess_dataset_tospacing(nii_files, unique_ids, record_label_dict, [1.,1.,1.], out_folder='',  num_worker=12)
 
-    # preprocess_dataset(nii_files, unique_ids, record_label_dict, 'median', out_folder='/home/c306h/cluster-data/classification/GLvsL_median_shape',  num_worker=8,)
-    preprocess_dataset(nii_files, unique_ids, record_label_dict, [160,160,160], out_folder='/home/c306h/cluster-data/classification/GLvsL_fixed160patchsize',  num_worker=12)
+    ###########use hdbet to find brain center ##########
+    ###########hd-bet -i imagepath -o outpath --save_bet_mask --no_bet_image######
+
+
+    # image_dir = "imagepath"
+    # mask_dir = "finalpath"
+    # out_dir = "outpath"
+    #
+    # process_and_save_all_cases(
+    #     image_dir=image_dir,
+    #     mask_dir=mask_dir,
+    #     out_dir=out_dir,
+    #     target_shape=(160, 160, 160),
+    #     num_workers=12)  # Adjust for your system
+
+
+
