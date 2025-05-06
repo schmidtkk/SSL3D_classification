@@ -207,10 +207,10 @@ def load_pretrained_weights(
     model_dict = mod.state_dict()
 
     in_conv_weights_model: torch.Tensor = model_dict[
-        "down_projection.proj.weigh"
+        "down_projection.proj.weight"
     ]
     in_conv_weights_pretrained: torch.Tensor = pretrained_dict[
-        "down_projection.proj.weigh"
+        "down_projection.proj.weight"
     ]
 
     in_channels_model = in_conv_weights_model.shape[1]
