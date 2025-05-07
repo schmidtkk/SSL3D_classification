@@ -84,7 +84,7 @@ def run_case(file_path, target_shape_or_spacing, output_dir, mode):
     img = sitk.ReadImage(file_path)
     data = sitk.GetArrayFromImage(img)
     data = data.reshape((1, *data.shape))
-    original_spacing = img.GetSpacing()
+    original_spacing = img.GetSpacing()[::-1]
     result = run_case_npy(data, original_spacing, target_shape_or_spacing, mode)
     result = result.astype(np.float32, copy=False)
     file_name = os.path.basename(file_path)[:-7]
@@ -106,12 +106,12 @@ def run_case(file_path, target_shape_or_spacing, output_dir, mode):
     sitk.WriteImage(out_img, out_path_truncated + '.nii.gz')
 
 
-    block_size_data, chunk_size_data = comp_blosc2_params(
-        result.shape,
-        target_shape,
-        data.itemsize)
-
-    save_case(result, out_path_truncated, chunks=chunk_size_data, blocks=block_size_data)
+    # block_size_data, chunk_size_data = comp_blosc2_params(
+    #     result.shape,
+    #     target_shape,
+    #     data.itemsize)
+    #
+    # save_case(result, out_path_truncated, chunks=chunk_size_data, blocks=block_size_data)
 
 
 def run_all_cases(filepaths, target_shape_or_spacing, output_dir, mode, num_workers:int=4):

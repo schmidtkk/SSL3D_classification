@@ -9,15 +9,15 @@ from .base_datamodule import BaseDataModule
 from .blosc2io import Blosc2IO
 
 
-class GLvsL_1mm_cropped_Data(Dataset):
+class GLvsL_1mm_cropped_160_Data(Dataset):
     def __init__(self, root, split, fold, transform=None):
         super().__init__()
         """
         GLvsL_median_shape Dataset
         """
-        self.img_dir = Path(root) / "GLvsL_1mm_cropped"
-        label_file = Path(root) / "GLvsL_1mm_cropped/labels.json"
-        split_file = Path(root) / "GLvsL_1mm_cropped/splits.json"
+        self.img_dir = Path(root) / "GLvsL_1mm_cropped_160"
+        label_file = Path(root) / "GLvsL_1mm_cropped_160/labels.json"
+        split_file = Path(root) / "GLvsL_1mm_cropped_160/splits.json"
 
         with open(split_file) as f:
             self.img_files = json.load(f)[fold]["train" if split == "train" else "val"]
@@ -47,19 +47,19 @@ class GLvsL_1mm_cropped_Data(Dataset):
         return len(self.img_files)
 
 
-class GLvsL_1mm_cropped_DataModule(BaseDataModule):
+class GLvsL_1mm_cropped_160_DataModule(BaseDataModule):
     def __init__(self, **params):
-        super(GLvsL_1mm_cropped_DataModule, self).__init__(**params)
+        super(GLvsL_1mm_cropped_160_DataModule, self).__init__(**params)
 
     def setup(self, stage: str):
 
-        self.train_dataset = GLvsL_1mm_cropped_Data(
+        self.train_dataset = GLvsL_1mm_cropped_160_Data(
             self.data_path,
             split="train",
             transform=self.train_transforms,
             fold=self.fold,
         )
-        self.val_dataset = GLvsL_1mm_cropped_Data(
+        self.val_dataset = GLvsL_1mm_cropped_160_Data(
             self.data_path,
             split="val",
             transform=self.test_transforms,

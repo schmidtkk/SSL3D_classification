@@ -9,15 +9,15 @@ from .base_datamodule import BaseDataModule
 from .blosc2io import Blosc2IO
 
 
-class GLvsL_1mm_cropped_192_Data(Dataset):
+class RECvsT_1mm_cropped_160_Data(Dataset):
     def __init__(self, root, split, fold, transform=None):
         super().__init__()
         """
         GLvsL_median_shape Dataset
         """
-        self.img_dir = Path(root) / "GLvsL_1mm_cropped_192"
-        label_file = Path(root) / "GLvsL_1mm_cropped_192/labels.json"
-        split_file = Path(root) / "GLvsL_1mm_cropped_192/splits.json"
+        self.img_dir = Path(root) / "RECvsT_1mm_cropped_160"
+        label_file = Path(root) / "RECvsT_1mm_cropped_160/labels.json"
+        split_file = Path(root) / "RECvsT_1mm_cropped_160/splits.json"
 
         with open(split_file) as f:
             self.img_files = json.load(f)[fold]["train" if split == "train" else "val"]
@@ -30,11 +30,9 @@ class GLvsL_1mm_cropped_192_Data(Dataset):
 
     def __getitem__(self, idx):
 
-        img1, _ = Blosc2IO.load(self.img_dir / ('t1_img_' + self.img_files[idx] + ".b2nd"), mode="r")
-        img2, _ = Blosc2IO.load(self.img_dir / ('t1ce_img_' + self.img_files[idx] + ".b2nd"), mode="r")
-        img3, _ = Blosc2IO.load(self.img_dir / ('t2_img_' + self.img_files[idx] + ".b2nd"), mode="r")
-        img4, _ = Blosc2IO.load(self.img_dir / ('flair_img_' + self.img_files[idx] + ".b2nd"), mode="r")
-        img =  np.stack([img1[0], img2[0], img3[0], img4[0]], axis=0)
+        img1, _ = Blosc2IO.load(self.img_dir / (self.img_files[idx] + "_MR_postop_ax_km_reg.b2nd"), mode="r")
+        img2, _ = Blosc2IO.load(self.img_dir / (self.img_files[idx] + "_MR_pseudo_ax_km.b2nd"), mode="r")
+        img =  np.stack([img1[0], img2[0]], axis=0)
 
         if self.transform:
             img = self.transform(**{"image": torch.from_numpy(img[...])})["image"]
@@ -47,19 +45,19 @@ class GLvsL_1mm_cropped_192_Data(Dataset):
         return len(self.img_files)
 
 
-class GLvsL_1mm_cropped_192_DataModule(BaseDataModule):
+class RECvsT_1mm_cropped_160_DataModule(BaseDataModule):
     def __init__(self, **params):
-        super(GLvsL_1mm_cropped_192_DataModule, self).__init__(**params)
+        super(RECvsT_1mm_cropped_160_DataModule, self).__init__(**params)
 
     def setup(self, stage: str):
 
-        self.train_dataset = GLvsL_1mm_cropped_192_Data(
+        self.train_dataset = RECvsT_1mm_cropped_160_Data(
             self.data_path,
             split="train",
             transform=self.train_transforms,
             fold=self.fold,
         )
-        self.val_dataset = GLvsL_1mm_cropped_192_Data(
+        self.val_dataset = RECvsT_1mm_cropped_160_Data(
             self.data_path,
             split="val",
             transform=self.test_transforms,

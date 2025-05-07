@@ -98,12 +98,12 @@ def preprocess_dataset_tospacing(
     """
     print(f"Total .nii.gz files found: {len(nii_files)}")
 
-    median_spacing, median_size, all_spacings, all_shapes = get_median_spacing_and_size_distributed(
-        nii_files, num_workers=num_worker
-    )
-
-    print('median shape:', median_size)
-    print('median spacing:', median_spacing)
+    # median_spacing, median_size, all_spacings, all_shapes = get_median_spacing_and_size_distributed(
+    #     nii_files, num_workers=num_worker
+    # )
+    #
+    # print('median shape:', median_size)
+    # print('median spacing:', median_spacing)
 
 
     run_all_cases(nii_files, target_spacing, out_folder, mode='spacing', num_workers=num_worker)
