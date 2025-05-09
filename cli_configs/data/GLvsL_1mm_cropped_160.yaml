@@ -33,8 +33,9 @@ model:
 trainer:
   logger:
     project: GLvsL_1mm_cropped_160
-  accumulate_grad_batches: 24
+  accumulate_grad_batches: 48
   max_epochs: 400
+  sync_batchnorm: True
 
 metrics:
   - 'f1'

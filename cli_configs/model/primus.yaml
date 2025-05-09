@@ -11,13 +11,13 @@ drop_path_rate: 0
 drop_path_scale: True
 patch_drop_rate: 0.0
 proj_drop_rate: 0.0
-attn_drop_rate: 0.2
+attn_drop_rate: 0.0
 rope_kwargs: null
 pretrained: True
 chpt_path: null
 classification_head_dropout: 0.2
 token_aggregation_method: avg
-pretraining_input_shape_mismatch: interpolate
+pretraining_input_shape_mismatch: interpolate_trilinear
 finetune_method: full
 load_cls_token: False
-cls_token_available: False
+cls_token_available: True

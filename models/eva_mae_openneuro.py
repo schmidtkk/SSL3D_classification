@@ -1,3 +1,5 @@
+import os.path
+
 from dynamic_network_architectures.building_blocks.eva import Eva
 from dynamic_network_architectures.building_blocks.patch_encode_decode import (
     PatchEmbed,
@@ -12,6 +14,7 @@ from einops import rearrange
 from peft import get_peft_model, LoraConfig, TaskType
 from base_model import BaseModel
 from models.classification_head import ClassificationHead
+from batchgenerators.utilities.file_and_folder_operations import join, load_json, isfile
 
 
 class EvaEncoder(Module):
@@ -121,6 +124,9 @@ class Eva_MAE(BaseModel):
                     "pretraining_input_shape_mismatch"
                 ],
                 load_cls_token=hypparams["load_cls_token"],
+                input_shape=input_shape,
+                patch_embed_size=patch_embed_size
+
             )
 
             if hypparams["finetune_method"] == "full":
@@ -180,6 +186,9 @@ def load_pretrained_weights(
     handle_input_shape_mismatch="interpolate",
     load_cls_token=True,
     verbose=True,
+    input_shape=None,
+    patch_embed_size=None
+
 ):
 
     # Load weights
@@ -197,8 +206,10 @@ def load_pretrained_weights(
 
     if isinstance(eva_model, DDP):
         mod = eva_model.module
+        mod.to('cuda')
     else:
         mod = eva_model
+        mod.to('cuda')
 
     if isinstance(mod, OptimizedModule):
         mod = mod._orig_mod
@@ -231,34 +242,26 @@ def load_pretrained_weights(
                 pretrained_dict[key] = repeated_weight_tensor
 
 
+    if isfile(join(os.sep.join(pretrained_weights_file.split(os.sep)[:-2]), 'plans.json')):
+        pretrained_config = load_json(join(os.sep.join(pretrained_weights_file.split(os.sep)[:-2]), 'plans.json'))['configurations']['3d_fullres']
+        pretrained_input_image_patch_size = pretrained_config['patch_size']
+    else:
+        print('############ no plans file found. Assuming pretraining patch size [160 160 160]###############')
+        pretrained_input_image_patch_size = [160, 160, 160]
+
+
+
 
     # adjust pos_embed if necessary
-    if handle_input_shape_mismatch == "interpolate":
+    handle_pos_embed_resize(pretrained_dict=pretrained_dict,
+                            model_dict=model_dict,
+                            mode=handle_input_shape_mismatch,
+                            input_shape=input_shape,  # Only needed for trilinear
+                            pretrained_input_patch_size=pretrained_input_image_patch_size,
+                            patch_embed_size=patch_embed_size
+                            )
 
-        pretrained_pos_embed = pretrained_dict["eva.pos_embed"]
-        model_pos_embed_shape = model_dict["eva.pos_embed"].shape
-        # Separate the class token and patch tokens
-        cls_pos_embed = pretrained_pos_embed[:, :1, :]  # Shape: [1, 1, 864]
-        patch_pos_embed = pretrained_pos_embed[:, 1:, :]  # Shape: [1, 13824, 864]
 
-        # Interpolate the patch positional embeddings
-        resized_patch_pos_embed = F.interpolate(
-            patch_pos_embed.permute(0, 2, 1),  # [B, C, Tokens] for interpolation
-            size=model_pos_embed_shape[1]
-                 - 1,  # Target number of patch tokens (subtract 1 for the class token)
-            mode="linear",
-            align_corners=False,
-        ).permute(
-            0, 2, 1
-        )  # Back to [B, Tokens, C]
-
-        # Concatenate the class token positional embedding with the resized patch embeddings
-        resized_pos_embed = torch.cat([cls_pos_embed, resized_patch_pos_embed], dim=1)
-        # Update the model dictionary
-        pretrained_dict["eva.pos_embed"] = resized_pos_embed
-
-    else:
-        raise NotImplementedError
 
 
     # Filter out unnecessary keys based on match_encoder_only flag
@@ -266,8 +269,9 @@ def load_pretrained_weights(
     skip_strings_in_pretrained.append(".decoder.")
     skip_strings_in_pretrained.append("up_projection")
 
-    if not load_cls_token:
+    if not load_cls_token or 'eva.cls_token' not in pretrained_dict:
         skip_strings_in_pretrained.append("eva.cls_token")
+
 
     # verify that all but the segmentation layers have the same shape
     for key, _ in model_dict.items():
@@ -307,3 +311,57 @@ def load_pretrained_weights(
     mod.load_state_dict(model_dict)
 
     return mod
+
+def interpolate_patch_embed_1d(patch_embed, target_len, mode="linear"):
+    """Resizes patch embeddings using interpolation."""
+    return F.interpolate(
+        patch_embed.permute(0, 2, 1),  # [B, C, Tokens]
+        size=target_len,
+        mode=mode,
+        align_corners=False,
+    ).permute(0, 2, 1)  # [B, Tokens, C]
+
+def interpolate_patch_embed_3d(patch_embed, in_shape, out_shape):
+    """Resizes patch embeddings using 3D trilinear interpolation."""
+    patch_embed = patch_embed.permute(0, 2, 1)
+    patch_embed = rearrange(patch_embed, "B C (x y z) -> B C x y z", **in_shape)
+    patch_embed = F.interpolate(patch_embed, size=list(out_shape.values()), mode="trilinear", align_corners=False)
+    patch_embed = rearrange(patch_embed, "B C x y z -> B C (x y z)", **out_shape)
+    return patch_embed.permute(0, 2, 1)
+
+
+def handle_pos_embed_resize(pretrained_dict, model_dict, mode, input_shape=None, pretrained_input_patch_size=None, patch_embed_size=None):
+    pretrained_pos_embed = pretrained_dict["eva.pos_embed"]
+    model_pos_embed = model_dict["eva.pos_embed"]
+    model_pos_embed_shape = model_pos_embed.shape
+
+    # for key, value in pretrained_dict.items():
+    #     print(f"{key}: {value.shape}")
+
+    has_cls_token = "eva.cls_token" in pretrained_dict
+
+
+    if has_cls_token:
+        cls_pos_embed = pretrained_pos_embed[:, :1, :]
+        patch_pos_embed = pretrained_pos_embed[:, 1:, :]
+    else:
+        if  "eva.cls_token" in model_dict.keys():
+            cls_pos_embed = model_pos_embed[:, :1, :]
+        patch_pos_embed = pretrained_pos_embed
+
+    if mode == "interpolate":
+        resized_patch_pos_embed = interpolate_patch_embed_1d(patch_pos_embed, target_len=model_pos_embed_shape[1] - int(has_cls_token))
+
+    elif mode == "interpolate_trilinear":
+        # Calculate input/output 3D shapes
+        in_shape = dict(zip("xyz", [int(d / p) for d, p in zip(pretrained_input_patch_size, patch_embed_size)]))
+        out_shape = dict(zip("xyz", [int(d / p) for d, p in zip(input_shape, patch_embed_size)]))
+        resized_patch_pos_embed = interpolate_patch_embed_3d(patch_pos_embed, in_shape, out_shape)
+
+    else:
+        raise NotImplementedError(f"Unknown resize mode: {mode}")
+    if "eva.cls_token" in model_dict.keys():
+        resized_pos_embed = torch.cat([cls_pos_embed, resized_patch_pos_embed], dim=1)
+    else:
+        resized_pos_embed = resized_patch_pos_embed
+    pretrained_dict["eva.pos_embed"] = resized_pos_embed
