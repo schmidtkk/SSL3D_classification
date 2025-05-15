@@ -17,7 +17,7 @@ Find a torch installation guide for your system [here](https://pytorch.org/get-s
 
 # Dataset preprocessing
 Currently, preprocessing is highly dataset- and user-dependent. 
-However in [this file](/datasets/preprocess_3D_data/datasets/rec_vs_t.py) you can find examples of how a dataset can be preprocessed. 
+However in [this file](/datasets/preprocess_3D_data/datasets/template_brain_preprocessing.py) you can find examples of how a dataset can be preprocessed. 
 
 For the SSL3D challenge we will resample all images towards a 1mm target spacing and then crop the center of the image with an 160 cubic block.  
 

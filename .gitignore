@@ -94,6 +94,7 @@ ENV/
 
 .trash
 datasets/preprocess_3D_data/datasets/GLvsL.py
+datasets/preprocess_3D_data/datasets/rec_vs_t.py
 cli_configs/data/GLvsL_1mm_cropped_160.yaml
 datasets/GLvsL.py
 datasets/GLvsL_1mm_cropped_160.py
