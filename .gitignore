@@ -93,7 +93,10 @@ ENV/
 .vscode
 
 .trash
-
+datasets/preprocess_3D_data/datasets/GLvsL.py
+cli_configs/data/GLvsL_1mm_cropped_160.yaml
+datasets/GLvsL.py
+datasets/GLvsL_1mm_cropped_160.py
 datasets/imagenet_resize.py
 
 !cli_configs/*
