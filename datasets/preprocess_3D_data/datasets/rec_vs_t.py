@@ -78,46 +78,73 @@ def load_and_crop_modalities_by_mask_center(
         "MR_pseudo_ax_km": crop_center_with_padding_np(pseudo, center, crop_size),
         "MR_postop_ax_km_reg": crop_center_with_padding_np(postop, center, crop_size),
     }
-def create_label_dict(path):
-    label_dict = load_json(path)
+def extract_label_dict_from_excel(xlsx_path):
+    # Use second row as header
+    df = pd.read_excel(xlsx_path, header=1)
+    label_dict = {}
+
+    for _, row in df.iterrows():
+        pat_id = row['PatID']
+        key = f"subj_{int(pat_id):03d}"
+
+        try:
+            rezidiv_op = int(row['Pathobefund (0=RN eindeutig, 1=Rezidiv eindeutig, 2=Mischbild, 3=uneindeutig)'])
+        except (ValueError, KeyError, TypeError):
+            rezidiv_op = None
+
+        try:
+            radionekrose = int(row['Radionekrose (0=nein, 1=ja, 2=Mischbild)'])
+        except (ValueError, KeyError, TypeError):
+            radionekrose = None
+
+        if rezidiv_op == 1 and radionekrose != 1:
+            label_dict[key] = 1
+        elif radionekrose == 1 and rezidiv_op != 1:
+            label_dict[key] = 0
+        else:
+            print(f"Warning: Unclear label for ID {key} (Rezidiv-OP: {rezidiv_op}, Radionekrose: {radionekrose})")
+
     return label_dict
 
 if __name__ == '__main__':
     # Base path and folders to search
-    '''
-    Steps to implement yourself: 
-    1. get all nifti files (nii_files
-    2. get all case identifier (unique ids)
-    3. create a lable dict containing class labels 
-    4. use preprocess_dataset_tospacing function to resample all images to 1mm spacing
-    5. apply hdbet to all image to find brain center (https://github.com/MIC-DKFZ/HD-BET)
-    6. copy labelsjson and splits.json file to preprocessed folder
-    6. crop all images given the HDbet masks and save them as blosc  in preprocessed folder for training ( process_and_save_all_cases needs to be adapted for your dataset)
-    
-    
-    '''
+    base_path = "/home/c306h/cluster-data/ssl3d_data/classification/raw/rec_vs_t/"  # Change this to your actual base directory
+
+    # Collect matching files
     nii_files = []
     unique_ids = []
-    label_dict = {} # {'unique_id1': 1, ...}
+
+    for file in os.listdir(base_path):
+        if file.endswith("MR_pseudo_ax_km.nii.gz"):
+            if file[:8] not in ['subj_046', 'subj_041', 'subj_105']:
+                unique_ids.append(file[:8])
+                print(file[:8])
+                nii_files.append(os.path.join(base_path, file))
+                nii_files.append(os.path.join(base_path, file[:8] + '_MR_postop_ax_km_reg.nii.gz'))
 
 
-    ###############resampling to 1mm spacing - uncomment!######################
-    #preprocess_dataset_tospacing(nii_files, unique_ids, label_dict, [1.,1.,1.], out_folder='/home/c306h/cluster-data/ssl3d_data/classification/raw/rec_vs_t_1mm',  num_worker=12)
+
+    record_label_dict = extract_label_dict_from_excel(join(base_path, 'metadata.xlsx'))
+    print(record_label_dict)
+
+
+    #resampling to 1mm spacing - uncomment!
+    # preprocess_dataset_tospacing(nii_files, unique_ids, record_label_dict, [1.,1.,1.], out_folder='/home/c306h/cluster-data/ssl3d_data/classification/raw/rec_vs_t_1mm',  num_worker=12)
 
     ###########use hdbet to find brain center ##########
     ###########hd-bet -i imagepath -o outpath --save_bet_mask --no_bet_image######
 
-    ###########last step: copy files, crop and save images#####################
-    # image_dir = '/home/c306h/cluster-data/ssl3d_data/classification/raw/rec_vs_t_1mm'
-    # mask_dir = "/home/c306h/cluster-data/ssl3d_data/classification/raw/rec_vs_t_1mm/masks"
-    # out_dir = "/home/c306h/cluster-data/ssl3d_data/classification/preprocessed/rec_vs_t_1mm_cropped_160"
-    # maybe_mkdir_p(out_dir)
-    # shutil.copy(join(image_dir, 'labels.json'), join(out_dir, 'labels.json'))
-    # shutil.copy(join(image_dir, 'splits.json'), join(out_dir, 'splits.json'))
-    #
-    # process_and_save_all_cases(
-    #     image_dir=image_dir,
-    #     mask_dir=mask_dir,
-    #     out_dir=out_dir,
-    #     target_shape=(160, 160, 160), #we use a 160pix patchsize for the pre-training
-    #     num_workers=12)  # Adjust for your system
+
+    image_dir = '/home/c306h/cluster-data/ssl3d_data/classification/raw/rec_vs_t_1mm'
+    mask_dir = "/home/c306h/cluster-data/ssl3d_data/classification/raw/rec_vs_t_1mm/masks"
+    out_dir = "/home/c306h/cluster-data/ssl3d_data/classification/preprocessed/rec_vs_t_1mm_cropped_160"
+    maybe_mkdir_p(out_dir)
+    shutil.copy(join(image_dir, 'labels.json'), join(out_dir, 'labels.json'))
+    shutil.copy(join(image_dir, 'splits.json'), join(out_dir, 'splits.json'))
+
+    process_and_save_all_cases(
+        image_dir=image_dir,
+        mask_dir=mask_dir,
+        out_dir=out_dir,
+        target_shape=(160, 160, 160), #we use a 160pix patchsize for the pre-training
+        num_workers=12)  # Adjust for your system
