@@ -17,14 +17,14 @@ Find a torch installation guide for your system [here](https://pytorch.org/get-s
 
 # Dataset preprocessing
 Currently, preprocessing is highly dataset- and user-dependent. 
-However in [this file](`./datasets/preprocess_3D_data/datasets/rec_vs_t.py`) you can find examples of how a dataset can be preprocessed. 
+However in [this file](/datasets/preprocess_3D_data/datasets/rec_vs_t.py) you can find examples of how a dataset can be preprocessed. 
 
 For the SSL3D challenge we will resample all images towards a 1mm target spacing and then crop the center of the image with an 160 cubic block.  
 
 # Including other datasets
 
 For including your own dataset follow these steps:
-1. In the ```dataset``` directory create a new file that implements the [torch dataset](https://pytorch.org/tutorials/beginner/basics/data_tutorial.html#creating-a-custom-dataset-for-your-files) class for your data. See [example](`./datasets/RECvsT_1mm_cropped_160.py').
+1. In the ```dataset``` directory create a new file that implements the [torch dataset](https://pytorch.org/tutorials/beginner/basics/data_tutorial.html#creating-a-custom-dataset-for-your-files) class for your data. See [example](/datasets/RECvsT_1mm_cropped_160.py).
 2. Additionally, create the [DataModule](https://lightning.ai/docs/pytorch/stable/data/datamodule.html) for your dataset by writing a class that inherits from `BaseDataModule`. Write the `init` and `setup` functions for your dataset. The dataloaders are already defined by the `BaseDataModule`. An example could look like this:
     ```python
     from .base_datamodule import BaseDataModule
@@ -47,7 +47,7 @@ For including your own dataset follow these steps:
     ```
    Note that the `__init__` function takes `**params` and passes them to the super init. By doing so the attributes `self.data_path`, `self.train_transforms` and `self.test_transforms` are already set automatically and can be used in the `setup` function. The `self.data_path` is a joined path consisting of the configs `data.module.data_root_dir` and `data.module.name`.
    Custom transforms can be added in `./augmentation/policies/<your-data>.py`. They need to inherit from the `BaseTransform` class. See the existing transforms for examples! 
-3. Add a `<your-data>.yaml` file to the data config group, defining some data-specific variables. For CIFAR-10 it looks like this:
+3. Add a `<your-data>.yaml` file to the data config group, defining some data-specific variables.
     ```yaml
     # @package _global_
     data:
@@ -118,7 +118,7 @@ Training from scratch:
 
 
 
-If you use this codebase, please cite:
+**If you use this codebase, please cite:**
 ```
    @misc{Openmind,
    title={An OpenMind for 3D medical vision self-supervised learning},
