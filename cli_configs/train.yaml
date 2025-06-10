@@ -96,7 +96,7 @@ trainer:
   strategy: 'ddp'
   logger: 
     _target_: lightning.pytorch.loggers.WandbLogger
-    save_dir: ${exp_dir}/${data.module.name}
+    save_dir: ${exp_dir}/${teamname}/classification/${data.module.name}
     offline: False
     project: ${data.module.name}
     group: ???
