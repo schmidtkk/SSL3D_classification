@@ -3,9 +3,8 @@ defaults:
   - env: local
   - model: resnet
   - data: cifar10
-  - teamname: debug
 
-
+teamname: 'debug'
 output_subdir: ${exp_dir}/${teamname}/classification/${data.module.name}/checkpoints/${make_group_name:}
 hydra:
   output_subdir: ${output_subdir}
