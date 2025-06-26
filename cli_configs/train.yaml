@@ -4,7 +4,8 @@ defaults:
   - model: resnet
   - data: cifar10
 
-output_subdir: ${exp_dir}/${data.module.name}/checkpoints/${make_group_name:}
+teamname: 'debug'
+output_subdir: ${exp_dir}/${teamname}/classification/${data.module.name}/checkpoints/${make_group_name:}
 hydra:
   output_subdir: ${output_subdir}
   job:
@@ -95,7 +96,7 @@ trainer:
   strategy: 'ddp'
   logger: 
     _target_: lightning.pytorch.loggers.WandbLogger
-    save_dir: ${exp_dir}/${data.module.name}
+    save_dir: ${exp_dir}/${teamname}/classification/${data.module.name}
     offline: False
     project: ${data.module.name}
     group: ???
