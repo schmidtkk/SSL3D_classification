@@ -356,6 +356,8 @@ def handle_pos_embed_resize(pretrained_dict, model_dict, mode, input_shape=None,
         # Calculate input/output 3D shapes
         in_shape = dict(zip("xyz", [int(d / p) for d, p in zip(pretrained_input_patch_size, patch_embed_size)]))
         out_shape = dict(zip("xyz", [int(d / p) for d, p in zip(input_shape, patch_embed_size)]))
+        print('inshape', in_shape)
+        print('outshape', out_shape)
         resized_patch_pos_embed = interpolate_patch_embed_3d(patch_pos_embed, in_shape, out_shape)
 
     else:
