@@ -95,10 +95,10 @@ def load_pretrained_weights(
         saved_model = torch.load(
             pretrained_weights_file,
             map_location=torch.device("cuda", dist.get_rank()),
-            weights_only=False,
+            weights_only=True,
         )
     else:
-        saved_model = torch.load(pretrained_weights_file, weights_only=False)
+        saved_model = torch.load(pretrained_weights_file, weights_only=True)
     pretrained_dict = saved_model["network_weights"]
 
     if isinstance(resenc_model, DDP):
