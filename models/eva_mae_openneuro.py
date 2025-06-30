@@ -241,16 +241,11 @@ def load_pretrained_weights(
                 # print(key)
                 pretrained_dict[key] = repeated_weight_tensor
 
-
-    if isfile(join(os.sep.join(pretrained_weights_file.split(os.sep)[:-2]), 'plans.json')):
-        pretrained_config = load_json(join(os.sep.join(pretrained_weights_file.split(os.sep)[:-2]), 'plans.json'))['configurations']['3d_fullres']
-        pretrained_input_image_patch_size = pretrained_config['patch_size']
+    if 'nnssl_adaptation_plan' in saved_model.keys():
+        pretrained_input_image_patch_size = saved_model['nnssl_adaptation_plan']["pretrain_plan"]["configurations"][pretrained_weights_file.split(os.sep)[-3].split('__')[-1]]["patch_size"]
     else:
-        print('############ no plans file found. Assuming pretraining patch size [160 160 160]###############')
+        print('############ no adaptation plan found in ckpt found. Assuming pretraining patch size [160 160 160]###############')
         pretrained_input_image_patch_size = [160, 160, 160]
-
-
-
 
     # adjust pos_embed if necessary
     handle_pos_embed_resize(pretrained_dict=pretrained_dict,
@@ -356,8 +351,6 @@ def handle_pos_embed_resize(pretrained_dict, model_dict, mode, input_shape=None,
         # Calculate input/output 3D shapes
         in_shape = dict(zip("xyz", [int(d / p) for d, p in zip(pretrained_input_patch_size, patch_embed_size)]))
         out_shape = dict(zip("xyz", [int(d / p) for d, p in zip(input_shape, patch_embed_size)]))
-        print('inshape', in_shape)
-        print('outshape', out_shape)
         resized_patch_pos_embed = interpolate_patch_embed_3d(patch_pos_embed, in_shape, out_shape)
 
     else:
