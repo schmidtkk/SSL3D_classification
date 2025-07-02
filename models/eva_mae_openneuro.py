@@ -199,7 +199,7 @@ def load_pretrained_weights(
             weights_only=False,
         )
     else:
-        saved_model = torch.load(pretrained_weights_file, weights_only=False)
+        saved_model = torch.load(pretrained_weights_file, weights_only=True)
 
     pretrained_dict = saved_model["network_weights"]
     pretrained_dict = {k.replace("encoder.", ""): v for k, v in pretrained_dict.items()}

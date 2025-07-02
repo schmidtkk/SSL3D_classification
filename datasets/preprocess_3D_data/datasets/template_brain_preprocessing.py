@@ -1,126 +1,125 @@
-import shutil
-
-import pandas as pd
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')))
+from datasets.preprocess_3D_data.hd_bet_prediction import hdbet_predict, get_hdbet_predictor
 from datasets.preprocess_3D_data.crop_to_mask import load_image_np, crop_center_with_padding_np, get_mask_center
-import glob
+from datasets.preprocess_3D_data.default_resampling import resample_data_or_seg_to_spacing, resample_data_or_seg_to_shape
 import numpy as np
+from datasets.preprocess_3D_data.cross_validation import generate_crossval_split
 from multiprocessing import Pool
-from functools import partial
-
+import SimpleITK as sitk
 from datasets.preprocess_3D_data.blosc_helper import save_case, comp_blosc2_params
 from batchgenerators.utilities.file_and_folder_operations import *
+from datasets.preprocess_3D_data.normalization import ZScoreNormalization
+import re
+from collections import defaultdict
 
-from datasets.preprocess_3D_data.preprocess_dataset import preprocess_dataset_tospacing
+def hd_bet_predict(in_folder:str):
+    #predicts only mask for image with _0000.nii.gz
+    predictor = get_hdbet_predictor(in_folder)
+    hdbet_predict(join(in_folder, 'imagesTr'), join(in_folder, 'masks'), predictor, keep_brain_mask=True, compute_brain_extracted_image=False)
 
 
-def process_and_save_all_cases(
-        image_dir,
-        mask_dir,
-        out_dir,
-        target_shape=(160, 160, 160),
-        num_workers=8
-):
-    os.makedirs(out_dir, exist_ok=True)
+def run_case(base_path, img_id, target_spacing, crop_size, output_dir, num_modalities, brain_extract=True):
+    bas_img_path = join(base_path, 'imagesTr', img_id)
+    if isfile(join(base_path, 'masks', img_id + '_0000_bet.nii.gz')):
+        has_mask = True
+        mask_path = join(base_path, 'masks', img_id + '_0000_bet.nii.gz')
+    else:
+        has_mask = False
 
-    t1_paths = sorted(glob.glob(os.path.join(image_dir, "*_MR_pseudo_ax_km.nii.gz")))
-    image_ids = [p.split('/')[-1][:8] for p in t1_paths]
+    if has_mask:
+        mask_img = sitk.ReadImage(mask_path)
+        mask_data = sitk.GetArrayFromImage(mask_img)
+        mask_data = mask_data.reshape(1, mask_data.shape[0], mask_data.shape[1], mask_data.shape[2])
+        original_spacing = mask_img.GetSpacing()[::-1]
+        mask_1mm = resample_data_or_seg_to_spacing(mask_data, original_spacing, target_spacing, is_seg=True)
+        center = get_mask_center(mask_1mm[0])
+        resized_mask = crop_center_with_padding_np(mask_1mm[0], center, crop_size)
+
+
+    for mod_id in range(num_modalities):
+        img = sitk.ReadImage(join(bas_img_path + f'_000{mod_id}.nii.gz'))
+        data = sitk.GetArrayFromImage(img)
+        data = data.reshape(1, data.shape[0], data.shape[1], data.shape[2])
+
+        #resample image
+        data_1mm = resample_data_or_seg_to_spacing(data, original_spacing, target_spacing)
+
+        if has_mask:
+            if brain_extract:
+                data_1mm = data_1mm * mask_1mm
+
+            # crop around mask center
+            resized_img = crop_center_with_padding_np(data_1mm[0], center, crop_size)
+            resized_img = resized_img.reshape(1, resized_img.shape[0], resized_img.shape[1], resized_img.shape[2])
+        else:
+            new_spacing = np.array([i / j * k for i, j, k in zip(target_spacing, crop_size, data_1mm.shape[1:])])
+            resized_img = resample_data_or_seg_to_shape(data_1mm, crop_size, target_spacing, new_spacing)
+
+        #####normalize
+        normalizer = ZScoreNormalization()
+        if has_mask:
+            normalizer.use_mask_for_norm = True
+            data = normalizer.run(resized_img, resized_mask.reshape(1, resized_mask.shape[0], resized_mask.shape[1], resized_mask.shape[2]))
+        else:
+            data = normalizer.run(resized_img)
+
+
+        #save_blosc_img
+        block_size_data, chunk_size_data = comp_blosc2_params(resized_img.shape, crop_size ,data.itemsize)
+        out_path_truncated = join(output_dir, f'{img_id}_000{mod_id}')
+        save_case(data, out_path_truncated, chunks=chunk_size_data, blocks=block_size_data)
+
+
+
+def load_crop_brainextract_normalize_images(in_folder:str , out_folder:str, target_spacing:list, patch_size:list, brain_extract=True, num_workers:int=1 ):
+    os.makedirs(out_folder, exist_ok=True)
+    all_images = os.listdir(join(in_folder, 'imagesTr'))
+    unique_ids = list(set(re.sub(r'_\d{4}\.nii\.gz$', '', f) for f in all_images))
+
+    pattern = re.compile(r'(.+?)_(\d{4})\.nii\.gz')
+    modalities = defaultdict(set)
+
+    for f in all_images:
+        m = pattern.match(f)
+        if m:
+            identifier, mod = m.groups()
+            modalities[identifier].add(mod)
+
+    expected = set.union(*modalities.values())
+    incomplete = {k: sorted(expected - v) for k, v in modalities.items() if v != expected}
+
+    if incomplete:
+        msg = '\n'.join(f"{k} missing: {v}" for k, v in incomplete.items())
+        raise RuntimeError(f"Some identifiers are missing modalities:\n{msg}")
+
+
+    #preprocess cases: Original image → resampling to 1mm → cropping to [160,160,160] using center of mask or resizing whole image if no mask available → maybe skull-stripping → z-score normalization maybe only for brain mask
+    args_list = [(in_folder, id,  target_spacing, patch_size, out_folder, len(expected), brain_extract) for id in unique_ids]
 
     with Pool(processes=num_workers) as pool:
-        pool.map(
-            partial(
-                process_single_case,
-                image_dir=image_dir,
-                mask_dir=mask_dir,
-                out_dir=out_dir,
-                crop_size=target_shape
-            ),
-            image_ids
-        )
+        pool.starmap(run_case, args_list)
 
-def process_single_case(image_id, image_dir, mask_dir, out_dir, crop_size):
-    try:
-        modalities = load_and_crop_modalities_by_mask_center(
-            image_id=image_id,
-            image_dir=image_dir,
-            mask_dir=mask_dir,
-            crop_size=crop_size
-        )
-        for modality_name, arr in modalities.items():
-            expanded_arr = np.expand_dims(arr, axis=0)
-            # print(arr.shape, crop_size, arr.itemsize, expanded_arr.shape)
-            blocks, chunks = comp_blosc2_params(
-                expanded_arr.shape, crop_size, arr.itemsize
-            )
 
-            out_path_truncated = os.path.join(
-                out_dir, f"{image_id}_{modality_name}"
-            )
 
-            save_case(expanded_arr, out_path_truncated, chunks=chunks, blocks=blocks)
+    split_file = generate_crossval_split(unique_ids, n_splits=3)
 
-            print(f"✅ Saved cropped data for image {image_id}")
-    except Exception as e:
-        print(f"❌ Failed to process {image_id}: {e}")
+    with open(os.path.join(out_folder, 'splits.json'), "w") as f:
+        json.dump(split_file, f, indent=2)
 
-def load_and_crop_modalities_by_mask_center(
-        image_id,
-        image_dir,
-        mask_dir,
-        crop_size=(160, 160, 160)
-):
-    """Load 4 modalities + mask, crop around mask center, return dict of arrays."""
-    pseudo, _ = load_image_np(os.path.join(image_dir, f"{image_id}_MR_pseudo_ax_km.nii.gz"))
-    postop, _ = load_image_np(os.path.join(image_dir, f"{image_id}_MR_postop_ax_km_reg.nii.gz"))
-    mask, _ = load_image_np(os.path.join(mask_dir, f"{image_id}_MR_pseudo_ax_km_bet.nii.gz"))
 
-    center = get_mask_center(mask)
-
-    return {
-        "MR_pseudo_ax_km": crop_center_with_padding_np(pseudo, center, crop_size),
-        "MR_postop_ax_km_reg": crop_center_with_padding_np(postop, center, crop_size),
-    }
 
 def create_label_dict(path):
     label_dict = load_json(path)
     return label_dict
 
 if __name__ == '__main__':
-    # Base path and folders to search
     '''
-    Steps to implement yourself: 
-    1. get all nifti files (nii_files
-    2. get all case identifier (unique ids)
-    3. create a lable dict containing class labels 
-    4. use preprocess_dataset_tospacing function to resample all images to 1mm spacing
-    5. apply hdbet to all image to find brain center (https://github.com/MIC-DKFZ/HD-BET)
-    6. copy labelsjson and splits.json file to preprocessed folder
-    6. crop all images given the HDbet masks and save them as blosc  in preprocessed folder for training ( process_and_save_all_cases needs to be adapted for your dataset)
-    
-    
+    1. organize the raw data like nnU-Net: raw folder has a lable dict (# {'unique_id1': 1, ...} and imagesTr with all images files
+    case_identifier_0000.nii.gz and _000x.nii.gz for other modallities
+    2. potentially use HD-Bet for brain extraction - saved in masks folder (only applied to modallity 0)
+    3. resample mask and image to 1mm spacing
+    4. crop image to center of mask with a fixed FOV patch size
+    5. z-score normalization of resulting crop
     '''
-    nii_files = []
-    unique_ids = []
-    label_dict = {} # {'unique_id1': 1, ...}
-
-
-
-    ###############resampling to 1mm spacing - uncomment!######################
-    #preprocess_dataset_tospacing(nii_files, unique_ids, label_dict, [1.,1.,1.], out_folder='/home/c306h/cluster-data/ssl3d_data/classification/raw/rec_vs_t_1mm',  num_worker=12)
-
-    ###########use hdbet to find brain center ##########
-    ###########hd-bet -i imagepath -o outpath --save_bet_mask --no_bet_image######
-
-    ###########last step: copy files, crop and save images#####################
-    # image_dir = '/home/c306h/cluster-data/ssl3d_data/classification/raw/rec_vs_t_1mm'
-    # mask_dir = "/home/c306h/cluster-data/ssl3d_data/classification/raw/rec_vs_t_1mm/masks"
-    # out_dir = "/home/c306h/cluster-data/ssl3d_data/classification/preprocessed/rec_vs_t_1mm_cropped_160"
-    # maybe_mkdir_p(out_dir)
-    # shutil.copy(join(image_dir, 'labels.json'), join(out_dir, 'labels.json'))
-    # shutil.copy(join(image_dir, 'splits.json'), join(out_dir, 'splits.json'))
-    #
-    # process_and_save_all_cases(
-    #     image_dir=image_dir,
-    #     mask_dir=mask_dir,
-    #     out_dir=out_dir,
-    #     target_shape=(160, 160, 160), #we use a 160pix patchsize for the pre-training
-    #     num_workers=12)  # Adjust for your system
