@@ -106,7 +106,7 @@ def preprocess_dataset_tospacing(
     # print('median spacing:', median_spacing)
 
 
-    run_all_cases(nii_files, target_spacing, out_folder, mode='spacing', num_workers=num_worker)
+    run_all_cases(nii_files, target_spacing, out_folder, mode='spacing', num_workers=num_worker )
 
     with open(os.path.join(out_folder, 'labels.json'), "w") as f:
         json.dump(label_dict, f, indent=2)

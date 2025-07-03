@@ -1,4 +1,6 @@
+import os
 import shutil
+
 import pandas as pd
 from datasets.preprocess_3D_data.crop_to_mask import load_image_np, crop_center_with_padding_np, get_mask_center
 import glob
@@ -21,8 +23,8 @@ def process_and_save_all_cases(
 ):
     os.makedirs(out_dir, exist_ok=True)
 
-    t1_paths = sorted(glob.glob(os.path.join(image_dir, "*_MR_pseudo_ax_km.nii.gz")))
-    image_ids = [p.split('/')[-1][:8] for p in t1_paths]
+    img_paths = [i for i in os.listdir(image_dir) if i.endswith('.nii.gz')]
+    image_ids = [p.split('/')[-1][:-7] for p in img_paths]
 
     with Pool(processes=num_workers) as pool:
         pool.map(
@@ -68,76 +70,68 @@ def load_and_crop_modalities_by_mask_center(
         crop_size=(160, 160, 160)
 ):
     """Load 4 modalities + mask, crop around mask center, return dict of arrays."""
-    pseudo, _ = load_image_np(os.path.join(image_dir, f"{image_id}_MR_pseudo_ax_km.nii.gz"))
-    postop, _ = load_image_np(os.path.join(image_dir, f"{image_id}_MR_postop_ax_km_reg.nii.gz"))
-    mask, _ = load_image_np(os.path.join(mask_dir, f"{image_id}_MR_pseudo_ax_km_bet.nii.gz"))
+    img, _ = load_image_np(os.path.join(image_dir, f"{image_id}.nii.gz"))
+    mask, _ = load_image_np(os.path.join(mask_dir , f"{image_id}_bet.nii.gz"))
 
     center = get_mask_center(mask)
 
     return {
-        "MR_pseudo_ax_km": crop_center_with_padding_np(pseudo, center, crop_size),
-        "MR_postop_ax_km_reg": crop_center_with_padding_np(postop, center, crop_size),
+        "crop": crop_center_with_padding_np(img, center, crop_size),
     }
-def extract_label_dict_from_excel(xlsx_path):
-    # Use second row as header
-    df = pd.read_excel(xlsx_path, header=1)
-    label_dict = {}
 
-    for _, row in df.iterrows():
-        pat_id = row['PatID']
-        key = f"subj_{int(pat_id):03d}"
-
-        try:
-            rezidiv_op = int(row['Pathobefund (0=RN eindeutig, 1=Rezidiv eindeutig, 2=Mischbild, 3=uneindeutig)'])
-        except (ValueError, KeyError, TypeError):
-            rezidiv_op = None
-
-        try:
-            radionekrose = int(row['Radionekrose (0=nein, 1=ja, 2=Mischbild)'])
-        except (ValueError, KeyError, TypeError):
-            radionekrose = None
-
-        if rezidiv_op == 1 and radionekrose != 1:
-            label_dict[key] = 1
-        elif radionekrose == 1 and rezidiv_op != 1:
-            label_dict[key] = 0
-        else:
-            print(f"Warning: Unclear label for ID {key} (Rezidiv-OP: {rezidiv_op}, Radionekrose: {radionekrose})")
-
+def create_label_dict(path):
+    label_dict = load_json(path)
     return label_dict
 
 if __name__ == '__main__':
     # Base path and folders to search
-    base_path = "/home/c306h/cluster-data/ssl3d_data/classification/raw/rec_vs_t/"  # Change this to your actual base directory
+    '''
+    Steps to implement yourself: 
+    1. get all nifti files (nii_files)
+    2. get all case identifier (unique ids)
+    3. create a lable dict containing class labels 
+    4. use preprocess_dataset_tospacing function to resample all images to 1mm spacing
+    5. apply hdbet to all image to find brain center (https://github.com/MIC-DKFZ/HD-BET)
+    6. copy labelsjson and splits.json file to preprocessed folder
+    6. crop all images given the HDbet masks and save them as blosc  in preprocessed folder for training ( process_and_save_all_cases needs to be adapted for your dataset)
+    
+    
+    '''
+    base_dir = '/home/c306h/cluster-data_all/t006d/Datasets/ABIDE/ABIDE_img'
+    csv_path = '/home/c306h/cluster-data_all/t006d/Datasets/ABIDE/ABIDE_2_20_2025.csv'
+    # 1. Find all .nii files under MP-RAGE
+    nii_files = glob.glob(os.path.join(base_dir, '**/MP-RAGE/**/*.nii'), recursive=True)
 
-    # Collect matching files
-    nii_files = []
-    unique_ids = []
+    # 2. get all case identifier (unique ids)
+    unique_ids = [p.split('/') [-1] for p in nii_files]  # image fnames
 
-    for file in os.listdir(base_path):
-        if file.endswith("MR_pseudo_ax_km.nii.gz"):
-            if file[:8] not in ['subj_046', 'subj_041', 'subj_105']:
-                unique_ids.append(file[:8])
-                print(file[:8])
-                nii_files.append(os.path.join(base_path, file))
-                nii_files.append(os.path.join(base_path, file[:8] + '_MR_postop_ax_km_reg.nii.gz'))
+    # 3. Load label CSV
+    df = pd.read_csv(csv_path)
+    df.columns = df.columns.str.strip()  # clean up header whitespace
+    df['Label'] = df['Group'].apply(lambda x: 1 if str(x).strip() == 'Autism' else 0)
+
+    # 4. Map Subject ID to Label
+    label_dict_full = dict(zip(df['Subject'].astype(str), df['Label']))
+
+    # 5. Build label dict with full path as key
+    label_dict = {}
+    for full_file_name in unique_ids:
+        subject_id = full_file_name.split('_')[1]
+        label_dict[full_file_name] = label_dict_full.get(subject_id, None)
 
 
 
-    record_label_dict = extract_label_dict_from_excel(join(base_path, 'metadata.xlsx'))
-    print(record_label_dict)
-
-
-    #resampling to 1mm spacing - uncomment!
-    # preprocess_dataset_tospacing(nii_files, unique_ids, record_label_dict, [1.,1.,1.], out_folder='/home/c306h/cluster-data/ssl3d_data/classification/raw/rec_vs_t_1mm',  num_worker=12)
+    # 4. use preprocess_dataset_tospacing function to resample all images to 1mm spacing
+    ###############resampling to 1mm spacing - uncomment!######################
+    # preprocess_dataset_tospacing(nii_files, unique_ids, label_dict, [1.,1.,1.], out_folder='/home/c306h/cluster-data/ssl3d_data/classification/raw/abide',  num_worker=12)
 
     ###########use hdbet to find brain center ##########
     ###########hd-bet -i imagepath -o outpath --save_bet_mask --no_bet_image######
 
-
-    image_dir = '/home/c306h/cluster-data/ssl3d_data/classification/raw/rec_vs_t_1mm'
-    mask_dir = "/home/c306h/cluster-data/ssl3d_data/classification/raw/rec_vs_t_1mm/masks"
-    out_dir = "/home/c306h/cluster-data/ssl3d_data/classification/preprocessed/rec_vs_t_1mm_cropped_160"
+    ###########last step: copy files, crop and save images#####################
+    image_dir = '/home/c306h/cluster-data/ssl3d_data/classification/raw/abide'
+    mask_dir = '/home/c306h/cluster-data/ssl3d_data/classification/raw/abide/masks'
+    out_dir = "/home/c306h/cluster-data/ssl3d_data/classification/preprocessed/abide_1mm_cropped_160"
     maybe_mkdir_p(out_dir)
     shutil.copy(join(image_dir, 'labels.json'), join(out_dir, 'labels.json'))
     shutil.copy(join(image_dir, 'splits.json'), join(out_dir, 'splits.json'))

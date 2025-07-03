@@ -8,6 +8,14 @@ from datasets.preprocess_3D_data.normalization import ZScoreNormalization
 from datasets.preprocess_3D_data.default_resampling import resample_data_or_seg_to_shape, resample_data_or_seg_to_spacing
 from datasets.preprocess_3D_data.blosc_helper import save_case, comp_blosc2_params
 
+def strip_extensions(file_path):
+    file_name = os.path.basename(file_path)
+    if file_name.endswith('.nii.gz'):
+        return file_name[:-7]
+    elif file_name.endswith('.nii'):
+        return file_name[:-4]
+    else:
+        return os.path.splitext(file_name)[0]
 
 def run_case_npy(data: np.ndarray, original_spacing: list, target_shape_or_spacing:list, mode:str):
     # let's not mess up the inputs!
@@ -87,7 +95,7 @@ def run_case(file_path, target_shape_or_spacing, output_dir, mode):
     original_spacing = img.GetSpacing()[::-1]
     result = run_case_npy(data, original_spacing, target_shape_or_spacing, mode)
     result = result.astype(np.float32, copy=False)
-    file_name = os.path.basename(file_path)[:-7]
+    file_name = strip_extensions(file_path)
     out_path_truncated = os.path.join(output_dir, file_name)
 
     if mode != 'shape':
