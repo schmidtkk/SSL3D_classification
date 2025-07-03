@@ -1,23 +1,21 @@
 import json
 from pathlib import Path
-
+from batchgenerators.utilities.file_and_folder_operations import *
 import numpy as np
 import torch
 from torch.utils.data import Dataset
-
+# from batchviewer import view_batch
 from .base_datamodule import BaseDataModule
 from .blosc2io import Blosc2IO
 
 
-class RECvsT_1mm_cropped_160_Data(Dataset):
+class abide_1mm_cropped_160_Data(Dataset):
     def __init__(self, root, split, fold, transform=None):
         super().__init__()
-        """
-        GLvsL_median_shape Dataset
-        """
-        self.img_dir = Path(root) / "RECvsT_1mm_cropped_160"
-        label_file = Path(root) / "RECvsT_1mm_cropped_160/labels.json"
-        split_file = Path(root) / "RECvsT_1mm_cropped_160/splits.json"
+
+        self.img_dir = Path(root) / "abide_1mm_cropped_160_new"
+        label_file = Path(root) / "abide_1mm_cropped_160_new/labels.json"
+        split_file = Path(root) / "abide_1mm_cropped_160_new/splits.json"
 
         with open(split_file) as f:
             self.img_files = json.load(f)[fold]["train" if split == "train" else "val"]
@@ -26,38 +24,38 @@ class RECvsT_1mm_cropped_160_Data(Dataset):
             labels = json.load(f)
         self.labels = [labels[i] for i in self.img_files]
 
+
         self.transform = transform
 
     def __getitem__(self, idx):
 
-        img1, _ = Blosc2IO.load(self.img_dir / (self.img_files[idx] + "_MR_postop_ax_km_reg.b2nd"), mode="r")
-        img2, _ = Blosc2IO.load(self.img_dir / (self.img_files[idx] + "_MR_pseudo_ax_km.b2nd"), mode="r")
-        img =  np.stack([img1[0], img2[0]], axis=0)
+        img1, _ = Blosc2IO.load(self.img_dir / (self.img_files[idx]+ "_0000.b2nd"), mode="r")
 
         if self.transform:
-            img = self.transform(**{"image": torch.from_numpy(img[...])})["image"]
+            img = self.transform(**{"image": torch.from_numpy(img1[...])})["image"]
         else:
-            img = torch.from_numpy(img[...])
-
+            img = torch.from_numpy(img1[...])
+        #
+        # view_batch(img, width=600, height=600)
         return img, self.labels[idx]
 
     def __len__(self):
         return len(self.img_files)
 
 
-class RECvsT_1mm_cropped_160_DataModule(BaseDataModule):
+class abide_1mm_cropped_160_DataModule(BaseDataModule):
     def __init__(self, **params):
-        super(RECvsT_1mm_cropped_160_DataModule, self).__init__(**params)
+        super(abide_1mm_cropped_160_DataModule, self).__init__(**params)
 
     def setup(self, stage: str):
 
-        self.train_dataset = RECvsT_1mm_cropped_160_Data(
+        self.train_dataset = abide_1mm_cropped_160_Data(
             self.data_path,
             split="train",
             transform=self.train_transforms,
             fold=self.fold,
         )
-        self.val_dataset = RECvsT_1mm_cropped_160_Data(
+        self.val_dataset = abide_1mm_cropped_160_Data(
             self.data_path,
             split="val",
             transform=self.test_transforms,

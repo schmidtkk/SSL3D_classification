@@ -1,7 +1,7 @@
 from collections import OrderedDict
 from copy import deepcopy
 from typing import Union, Tuple, List
-
+from batchgenerators.augmentations.utils import resize_segmentation
 import numpy as np
 import pandas as pd
 import sklearn
@@ -129,7 +129,7 @@ def resample_data_or_seg(data: np.ndarray, new_shape: Union[Tuple[float, ...], L
     assert len(new_shape) == data.ndim - 1
 
     if is_seg:
-        # resize_fn = resize_segmentation
+        resize_fn = resize_segmentation
         kwargs = OrderedDict()
     else:
         resize_fn = resize
