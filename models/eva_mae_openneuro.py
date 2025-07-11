@@ -241,8 +241,15 @@ def load_pretrained_weights(
                 # print(key)
                 pretrained_dict[key] = repeated_weight_tensor
 
+
     if 'nnssl_adaptation_plan' in saved_model.keys():
-        pretrained_input_image_patch_size = saved_model['nnssl_adaptation_plan']["pretrain_plan"]["configurations"][pretrained_weights_file.split(os.sep)[-3].split('__')[-1]]["patch_size"]
+        try:
+            ##### if the pretrained model was trained by yourself this should work####
+            key = pretrained_weights_file.split(os.sep)[-3].split('__')[-1]
+            pretrained_input_image_patch_size = saved_model['nnssl_adaptation_plan']["pretrain_plan"]["configurations"][key]["patch_size"]
+        except Exception:
+            #####huggingface models only have onemmiso config####
+            pretrained_input_image_patch_size = saved_model['nnssl_adaptation_plan']["pretrain_plan"]["configurations"]["onemmiso"]["patch_size"]
     else:
         print('############ no adaptation plan found in ckpt found. Assuming pretraining patch size [160 160 160]###############')
         pretrained_input_image_patch_size = [160, 160, 160]
