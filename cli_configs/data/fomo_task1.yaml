@@ -1,0 +1,57 @@
+# @package _global_
+# FOMO Task1 Configuration - Enhanced Multi-Task XYZ Format (NNSSL Compatible)
+
+data:
+  module:
+    _target_: datasets.fomo_task1.FomoTask1DataModuleXYZ
+    name: fomo_task1
+    data_root_dir: ${data_dir}/fomo_task1_preprocessed  # Point to the preprocessed data folder
+    batch_size: 2  # Conservative for large XYZ patches
+    train_transforms:
+      _target_: augmentation.policies.xyz_format.get_fomo_task1_xyz_transforms
+      patch_size: ${data.patch_size}
+      rotation_for_DA: 0.523599  # ~30 degrees
+      mirror_axes: [0, 1]  # Mirror X,Y axes only (preserve anisotropic Z)
+    test_transforms: null
+  cv:
+    k: 3
+
+  num_classes: 2
+  patch_size: [256, 256, 32]  # XYZ format: (X, Y, Z)
+
+model:
+  task: 'Classification'
+  cifar_size: False
+  input_channels: 4  # adc, dwi_b1000, flair, swi
+  input_dim: 3
+  input_shape: ${data.patch_size}  # XYZ format
+  optimizer: AdamW
+  lr: 0.0001
+  warmstart: 20
+  weight_decay: 1e-2
+  label_smoothing: 0.1  # Reduced for small dataset
+
+trainer:
+  accumulate_grad_batches: 8  # Increase due to smaller batch size
+  max_epochs: 300  # More epochs for small dataset
+  sync_batchnorm: True
+
+metrics:
+  - 'f1'
+  - 'balanced_acc'
+  - 'ap'
+  - 'auroc'
+
+# Technical notes for XYZ format compatibility:
+# - Data format: (C, X, Y, Z) = (4, 256, 256, 32)
+# - Spacing: (0.45, 0.45, 5.0) mm in XYZ order
+# - Batch size reduced due to large patch size (256×256×32×4 ≈ 8.4M values)
+# - Mirror axes (0,1) = (X,Y) to avoid disturbing anisotropic Z dimension
+# - Input shape follows XYZ convention for NNSSL compatibility
+# - Conservative learning rate and augmentations for medical data
+
+# NNSSL Compatibility Notes:
+# - This configuration produces data compatible with NNSSL pretrained models
+# - Input shape (4, 256, 256, 32) matches expected NNSSL format (C, X, Y, Z)
+# - Spacing and axis order align with NNSSL preprocessing conventions
+# - No runtime axis transformations needed for model loading

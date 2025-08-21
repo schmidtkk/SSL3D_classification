@@ -31,7 +31,9 @@ def main(cfg):
     log_path.mkdir(parents=True, exist_ok=True)
 
     uid = cfg.output_subdir.split("/")[-1]
-    cfg.trainer.logger.group = uid
+    # Only set group for loggers that support it (e.g., WandbLogger)
+    if hasattr(cfg.trainer.logger, 'group') or 'Wandb' in cfg.trainer.logger._target_:
+        cfg.trainer.logger.group = uid
 
     # add sync_batchnorm if multiple GPUs are used
     if cfg.trainer.devices > 1 and cfg.trainer.accelerator == "gpu":

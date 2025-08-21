@@ -435,19 +435,21 @@ class BaseModel(L.LightningModule):
                 labels_all = labels_all[sorted_idx]
                 if self.task == "Regression":
                     data = [[x, y] for (x, y) in zip(labels_all, preds_all)]
-                    table = wandb.Table(
-                        data=data, columns=["Ground Truth", "Prediction"]
-                    )
-                    wandb.log(
-                        {
-                            "Val Scatterplot": wandb.plot.scatter(
-                                table,
-                                "Ground Truth",
-                                "Prediction",
-                                "Validation Scatterplot",
-                            )
-                        }
-                    )
+                    # Only create wandb visualizations if using WandbLogger
+                    if hasattr(self.logger, 'experiment') and hasattr(self.logger.experiment, 'log'):
+                        table = wandb.Table(
+                            data=data, columns=["Ground Truth", "Prediction"]
+                        )
+                        wandb.log(
+                            {
+                                "Val Scatterplot": wandb.plot.scatter(
+                                    table,
+                                    "Ground Truth",
+                                    "Prediction",
+                                    "Validation Scatterplot",
+                                )
+                            }
+                        )
                 if self.save_preds:
 
                     if self.task == "Classification":
@@ -467,8 +469,10 @@ class BaseModel(L.LightningModule):
                             )
                             for x, y in zip(labels_all, preds_all)
                         ]
-                        table = wandb.Table(data=data, columns=columns)
-                        wandb.log({"Val Predictions": table})
+                        # Only create wandb tables if using WandbLogger
+                        if hasattr(self.logger, 'experiment') and hasattr(self.logger.experiment, 'log'):
+                            table = wandb.Table(data=data, columns=columns)
+                            wandb.log({"Val Predictions": table})
                     else:
                         raise NotImplementedError
 
@@ -504,14 +508,16 @@ class BaseModel(L.LightningModule):
             data = [
                 [x, y] for (x, y) in zip(self.train_label_list, self.train_pred_list)
             ]
-            table = wandb.Table(data=data, columns=["Ground Truth", "Prediction"])
-            wandb.log(
-                {
-                    "Train Scatterplot": wandb.plot.scatter(
-                        table, "Ground Truth", "Prediction", "Train Scatterplot"
-                    )
-                }
-            )
+            # Only create wandb visualizations if using WandbLogger
+            if hasattr(self.logger, 'experiment') and hasattr(self.logger.experiment, 'log'):
+                table = wandb.Table(data=data, columns=["Ground Truth", "Prediction"])
+                wandb.log(
+                    {
+                        "Train Scatterplot": wandb.plot.scatter(
+                            table, "Ground Truth", "Prediction", "Train Scatterplot"
+                        )
+                    }
+                )
             # reset
             self.train_pred_list = []
             self.train_label_list = []

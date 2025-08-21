@@ -84,6 +84,12 @@ trainer:
       dirpath: ???
       filename: '{epoch}-{val_loss:.2f}'
       auto_insert_metric_name: True
+    auto_plot:
+      _target_: callbacks.auto_plot.AutoPlotCallback
+      plot_every_n_epochs: 10
+      save_dir: ${exp_dir}/${teamname}/classification/${data.module.name}/plots
+      plot_format: png
+      show_plots: False
   devices: 1
   accelerator: 'gpu'
   sync_batchnorm: False  # set to True if you use multiple GPUs
@@ -95,11 +101,9 @@ trainer:
   enable_progress_bar: True
   strategy: 'ddp'
   logger: 
-    _target_: lightning.pytorch.loggers.WandbLogger
+    _target_: lightning.pytorch.loggers.CSVLogger
     save_dir: ${exp_dir}/${teamname}/classification/${data.module.name}
-    offline: False
-    project: ${data.module.name}
-    group: ???
+    name: ${data.module.name}
   num_sanity_val_steps: 0
   accumulate_grad_batches: 1
   # Some useful trainer parameters for debugging
